@@ -2,7 +2,7 @@ import React from 'react'
 import { cn } from '@/lib/utils'
 
 interface LogoProps {
-  variant?: 'light' | 'dark'
+  variant?: 'light' | 'dark' | 'auto'
   compact?: boolean
   className?: string
   size?: 'sm' | 'md' | 'lg'
@@ -14,9 +14,14 @@ const sizeMap = {
   lg: { icon: 48, text: 'text-2xl', subText: 'text-[10px]' },
 }
 
-export function Logo({ variant = 'dark', compact = false, className, size = 'md' }: LogoProps) {
+export function Logo({ variant = 'auto', compact = false, className, size = 'md' }: LogoProps) {
   const { icon, text, subText } = sizeMap[size]
-  const textColor = variant === 'light' ? 'text-white' : 'text-slate-900'
+  const textColor =
+    variant === 'light'
+      ? 'text-white'
+      : variant === 'dark'
+      ? 'text-slate-900'
+      : 'text-slate-900 dark:text-white'
 
   return (
     <div className={cn('flex items-center gap-2.5 select-none group', className)}>
