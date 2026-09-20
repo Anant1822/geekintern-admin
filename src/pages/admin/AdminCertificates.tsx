@@ -16,7 +16,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
@@ -73,7 +73,31 @@ export default function AdminCertificates() {
 
   const fetchCertificates = useCallback(async () => {
     setLoading(true)
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('certificates')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+
+      if (debouncedSearch) {
+        query = query.or(`student_name.ilike.%${debouncedSearch}%,certificate_id.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: certData, count: certCount, error: certErr } = await query.range(from, to)
+
+      if (certErr) throw certErr
+      setCertificates(certData || [])
+      setTotal(certCount || 0)
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       const res = await api.get('/admin/certificates', { params })
@@ -83,22 +107,7 @@ export default function AdminCertificates() {
       setTotal(body?.pagination?.total ?? list.length)
     } catch {
       try {
-        let query = supabase
-          .from('certificates')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-
-        if (debouncedSearch) {
-          query = query.or(`student_name.ilike.%${debouncedSearch}%,certificate_id.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: certData, count: certCount, error: certErr } = await query.range(from, to)
-
-        if (certErr) throw certErr
-        setCertificates(certData || [])
-        setTotal(certCount || 0)
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         toast({ title: 'Error', description: 'Failed to load certificates library.', variant: 'destructive' })
       }

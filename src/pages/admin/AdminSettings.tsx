@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import type { FAQ, Testimonial } from '@/types'
 
@@ -152,6 +152,16 @@ export default function AdminSettings() {
   const loadAdminAccounts = async () => {
     setLoadingAdmins(true)
     try {
+      if (!isBackendAvailable) {
+        const { data: adminProfiles } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, role, created_at')
+          .eq('role', 'admin')
+          .order('created_at', { ascending: false })
+        setAdminAccounts(adminProfiles || [])
+        return
+      }
+
       const res = await api.get('/admin/accounts')
       setAdminAccounts(res.data?.data || [])
     } catch {

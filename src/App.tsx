@@ -3,19 +3,22 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import LoadingPage from '@/components/common/LoadingPage'
 import ErrorBoundary from '@/components/common/ErrorBoundary'
+// Core login page is loaded eagerly for fastest initial render
 import AdminLogin from '@/pages/admin/AdminLogin'
-import AdminDashboard from '@/pages/admin/AdminDashboard'
-import AdminInternships from '@/pages/admin/AdminInternships'
-import AdminInternshipForm from '@/pages/admin/AdminInternshipForm'
-import AdminApplications from '@/pages/admin/AdminApplications'
-import AdminUsers from '@/pages/admin/AdminUsers'
-import AdminCertificates from '@/pages/admin/AdminCertificates'
-import AdminOfferLetters from '@/pages/admin/AdminOfferLetters'
-import AdminSettings from '@/pages/admin/AdminSettings'
-import AdminInquiries from '@/pages/admin/AdminInquiries'
-import AdminMessages from '@/pages/admin/AdminMessages'
 import AdminRoute from '@/components/common/AdminRoute'
 import { useAuthInit } from '@/hooks/useAuth'
+
+// Lazy load console sub-routes to split code into fast, lightweight chunks
+const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'))
+const AdminInternships = lazy(() => import('@/pages/admin/AdminInternships'))
+const AdminInternshipForm = lazy(() => import('@/pages/admin/AdminInternshipForm'))
+const AdminApplications = lazy(() => import('@/pages/admin/AdminApplications'))
+const AdminUsers = lazy(() => import('@/pages/admin/AdminUsers'))
+const AdminCertificates = lazy(() => import('@/pages/admin/AdminCertificates'))
+const AdminOfferLetters = lazy(() => import('@/pages/admin/AdminOfferLetters'))
+const AdminSettings = lazy(() => import('@/pages/admin/AdminSettings'))
+const AdminInquiries = lazy(() => import('@/pages/admin/AdminInquiries'))
+const AdminMessages = lazy(() => import('@/pages/admin/AdminMessages'))
 
 export default function App() {
   useAuthInit()

@@ -33,7 +33,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatDate, getInitials, cn } from '@/lib/utils'
 
@@ -137,7 +137,57 @@ export default function AdminUsers() {
 
   const fetchStudents = useCallback(async () => {
     setLoading(true)
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('direct_applications')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+
+      if (debouncedSearch) {
+        query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: directData, count: directCount, error: directErr } = await query.range(from, to)
+
+      if (directErr) throw directErr
+
+      const transformed: RegisteredStudentItem[] = (directData || []).map((app: any) => ({
+        id: app.id,
+        full_name: app.full_name || 'Student Candidate',
+        email: app.email,
+        phone: app.phone || '',
+        college_name: app.college_name || '',
+        branch: app.branch || '',
+        year_of_study: app.year_of_study || '',
+        created_at: app.created_at,
+        role: 'student',
+        target_internship: app.internship_title || 'Internship Lead',
+        internship_title: app.internship_title,
+        internship_duration: app.duration,
+        resume_url: app.resume_url,
+        linkedin_url: app.linkedin_url,
+        github_url: app.github_url,
+        status: app.status || 'pending',
+        has_certificate: false,
+        has_offer_letter: false,
+        is_registered_account: false,
+      }))
+
+      setStudents(transformed)
+      setTotal(directCount || 0)
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter !== 'all') params.status = statusFilter
@@ -154,48 +204,7 @@ export default function AdminUsers() {
       setTotal(totalCount)
     } catch {
       try {
-        let query = supabase
-          .from('direct_applications')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-
-        if (debouncedSearch) {
-          query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
-        }
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: directData, count: directCount, error: directErr } = await query.range(from, to)
-
-        if (directErr) throw directErr
-
-        const transformed: RegisteredStudentItem[] = (directData || []).map((app: any) => ({
-          id: app.id,
-          full_name: app.full_name || 'Student Candidate',
-          email: app.email,
-          phone: app.phone || '',
-          college_name: app.college_name || '',
-          branch: app.branch || '',
-          year_of_study: app.year_of_study || '',
-          created_at: app.created_at,
-          role: 'student',
-          target_internship: app.internship_title || 'Internship Lead',
-          internship_title: app.internship_title,
-          internship_duration: app.duration,
-          resume_url: app.resume_url,
-          linkedin_url: app.linkedin_url,
-          github_url: app.github_url,
-          status: app.status || 'pending',
-          has_certificate: false,
-          has_offer_letter: false,
-          is_registered_account: false,
-        }))
-
-        setStudents(transformed)
-        setTotal(directCount || 0)
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         toast({ title: 'Error', description: 'Failed to load students.', variant: 'destructive' })
       }

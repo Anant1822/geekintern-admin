@@ -36,7 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
@@ -181,7 +181,52 @@ export default function AdminApplications() {
     } else {
       setIsFetching(true)
     }
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('direct_applications')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+
+      if (debouncedSearch) {
+        query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+      if (dateFrom) {
+        query = query.gte('created_at', dateFrom)
+      }
+      if (dateTo) {
+        query = query.lte('created_at', dateTo)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: directData, count: directCount, error: directError } = await query.range(from, to)
+
+      if (directError) throw directError
+
+      setApplications(directData || [])
+      setTotal(directCount || 0)
+
+      // Status counts fallback
+      const { data: allStatuses } = await supabase.from('direct_applications').select('status')
+      if (allStatuses) {
+        const counts: Record<string, number> = { all: allStatuses.length }
+        allStatuses.forEach((r) => {
+          const s = r.status || 'pending'
+          counts[s] = (counts[s] || 0) + 1
+        })
+        setStatusCounts((prev) => ({ ...prev, ...counts }))
+      }
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter !== 'all') params.status = statusFilter
@@ -202,45 +247,8 @@ export default function AdminApplications() {
         : (typeof body?.total === 'number' ? body.total : (Array.isArray(body?.data) ? body.data.length : 0))
       setTotal(totalCount)
     } catch (err) {
-      console.warn('API error, falling back to direct Supabase query:', err)
       try {
-        let query = supabase
-          .from('direct_applications')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-
-        if (debouncedSearch) {
-          query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
-        }
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter)
-        }
-        if (dateFrom) {
-          query = query.gte('created_at', dateFrom)
-        }
-        if (dateTo) {
-          query = query.lte('created_at', dateTo)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: directData, count: directCount, error: directError } = await query.range(from, to)
-
-        if (directError) throw directError
-
-        setApplications(directData || [])
-        setTotal(directCount || 0)
-
-        // Status counts fallback
-        const { data: allStatuses } = await supabase.from('direct_applications').select('status')
-        if (allStatuses) {
-          const counts: Record<string, number> = { all: allStatuses.length }
-          allStatuses.forEach((r) => {
-            const s = r.status || 'pending'
-            counts[s] = (counts[s] || 0) + 1
-          })
-          setStatusCounts((prev) => ({ ...prev, ...counts }))
-        }
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         console.error('Failed to load applications via fallback', fallbackErr)
         toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })

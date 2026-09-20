@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 
@@ -57,7 +57,34 @@ export default function AdminInquiries() {
 
   const fetchInquiries = useCallback(async () => {
     setLoading(true)
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('college_inquiries')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+
+      if (search.trim()) {
+        query = query.or(`college_name.ilike.%${search.trim()}%,contact_person.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%`)
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: inqData, count: inqCount, error: inqErr } = await query.range(from, to)
+
+      if (inqErr) throw inqErr
+      setInquiries(inqData || [])
+      setTotal(inqCount || 0)
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (search.trim()) params.search = search.trim()
       if (statusFilter !== 'all') params.status = statusFilter
@@ -71,25 +98,7 @@ export default function AdminInquiries() {
       setTotal(totalCount)
     } catch {
       try {
-        let query = supabase
-          .from('college_inquiries')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-
-        if (search.trim()) {
-          query = query.or(`college_name.ilike.%${search.trim()}%,contact_person.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%`)
-        }
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: inqData, count: inqCount, error: inqErr } = await query.range(from, to)
-
-        if (inqErr) throw inqErr
-        setInquiries(inqData || [])
-        setTotal(inqCount || 0)
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         toast({ title: 'Error', description: 'Failed to load college inquiries.', variant: 'destructive' })
       }

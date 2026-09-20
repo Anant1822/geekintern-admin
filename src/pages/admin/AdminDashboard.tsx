@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { formatDate, cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 
@@ -93,72 +93,88 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const fetchFromSupabase = async () => {
+    const [
+      { count: studentProfilesCount },
+      { count: internshipsCount },
+      { count: directAppsCount },
+      { count: registeredAppsCount },
+      { count: paymentsCount },
+      { count: pendingReviewsCount },
+      { count: newInquiriesCount },
+      { count: unreadMessagesCount },
+      { data: recentDirectApps },
+      { data: recentInquiries },
+      { data: recentMessages },
+    ] = await Promise.all([
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
+      supabase.from('internships').select('id', { count: 'exact', head: true }).neq('status', 'deleted'),
+      supabase.from('direct_applications').select('id', { count: 'exact', head: true }),
+      supabase.from('applications').select('id', { count: 'exact', head: true }),
+      supabase.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'success'),
+      supabase.from('direct_applications').select('id', { count: 'exact', head: true }).or('status.eq.under_review,status.eq.pending,status.eq.submitted'),
+      supabase.from('college_inquiries').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
+      supabase.from('contact_messages').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
+      supabase
+        .from('direct_applications')
+        .select('id, full_name, email, phone, college_name, branch, internship_title, duration, status, created_at')
+        .order('created_at', { ascending: false })
+        .limit(6),
+      supabase
+        .from('college_inquiries')
+        .select('id, college_name, contact_person, email, phone, status, created_at')
+        .order('created_at', { ascending: false })
+        .limit(4),
+      supabase
+        .from('contact_messages')
+        .select('id, name, email, subject, status, created_at')
+        .order('created_at', { ascending: false })
+        .limit(4),
+    ])
+
+    const totalRegisteredStudents = Math.max(studentProfilesCount ?? 0, directAppsCount ?? 0)
+    const totalApplications = (directAppsCount ?? 0) + (registeredAppsCount ?? 0)
+
+    setData({
+      counts: {
+        students: totalRegisteredStudents,
+        internships: internshipsCount ?? 0,
+        applications: totalApplications,
+        direct_applications: directAppsCount ?? 0,
+        payments: paymentsCount ?? 0,
+        pending_reviews: pendingReviewsCount ?? 0,
+        college_inquiries_new: newInquiriesCount ?? 0,
+        unread_messages: unreadMessagesCount ?? 0,
+      },
+      recent_applications: recentDirectApps ?? [],
+      recent_inquiries: recentInquiries ?? [],
+      recent_messages: recentMessages ?? [],
+    })
+  }
+
   const fetchDashboard = async () => {
     setLoading(true)
     setError(null)
+
+    if (!isBackendAvailable) {
+      try {
+        await fetchFromSupabase()
+      } catch (err) {
+        console.error('Direct Supabase fetch error:', err)
+        setError('Failed to load dashboard data. Please check your network.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     try {
       const res = await api.get('/admin/dashboard')
       const body = res.data?.data || res.data || {}
       setData(body)
     } catch {
-      // Fallback: Query Supabase directly if backend server is unreachable
       try {
-        const [
-          { count: studentProfilesCount },
-          { count: internshipsCount },
-          { count: directAppsCount },
-          { count: registeredAppsCount },
-          { count: paymentsCount },
-          { count: pendingReviewsCount },
-          { count: newInquiriesCount },
-          { count: unreadMessagesCount },
-          { data: recentDirectApps },
-          { data: recentInquiries },
-          { data: recentMessages },
-        ] = await Promise.all([
-          supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
-          supabase.from('internships').select('id', { count: 'exact', head: true }).neq('status', 'deleted'),
-          supabase.from('direct_applications').select('id', { count: 'exact', head: true }),
-          supabase.from('applications').select('id', { count: 'exact', head: true }),
-          supabase.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'success'),
-          supabase.from('direct_applications').select('id', { count: 'exact', head: true }).or('status.eq.under_review,status.eq.pending,status.eq.submitted'),
-          supabase.from('college_inquiries').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
-          supabase.from('contact_messages').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
-          supabase
-            .from('direct_applications')
-            .select('id, full_name, email, phone, college_name, branch, internship_title, duration, status, created_at')
-            .order('created_at', { ascending: false })
-            .limit(6),
-          supabase
-            .from('college_inquiries')
-            .select('id, college_name, contact_person, email, phone, status, created_at')
-            .order('created_at', { ascending: false })
-            .limit(4),
-          supabase
-            .from('contact_messages')
-            .select('id, name, email, subject, status, created_at')
-            .order('created_at', { ascending: false })
-            .limit(4),
-        ])
-
-        const totalRegisteredStudents = Math.max(studentProfilesCount ?? 0, directAppsCount ?? 0)
-        const totalApplications = (directAppsCount ?? 0) + (registeredAppsCount ?? 0)
-
-        setData({
-          counts: {
-            students: totalRegisteredStudents,
-            internships: internshipsCount ?? 0,
-            applications: totalApplications,
-            direct_applications: directAppsCount ?? 0,
-            payments: paymentsCount ?? 0,
-            pending_reviews: pendingReviewsCount ?? 0,
-            college_inquiries_new: newInquiriesCount ?? 0,
-            unread_messages: unreadMessagesCount ?? 0,
-          },
-          recent_applications: recentDirectApps ?? [],
-          recent_inquiries: recentInquiries ?? [],
-          recent_messages: recentMessages ?? [],
-        })
+        await fetchFromSupabase()
       } catch (directErr) {
         console.error('Supabase fallback error:', directErr)
         setError('Failed to load dashboard data. Please check your network.')

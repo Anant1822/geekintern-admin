@@ -1,13 +1,33 @@
 import axios from 'axios'
 import { supabase } from '@/lib/supabase'
 
+const customApiUrl = import.meta.env.VITE_API_URL as string
+const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+const apiBaseURL = customApiUrl || (isLocalhost ? 'http://localhost:3001/api' : '')
+
+export const isBackendAvailable = !!(customApiUrl || isLocalhost)
+
 const api = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL as string) || 'http://localhost:3001/api',
+  baseURL: apiBaseURL || 'http://localhost:3001/api',
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: isLocalhost ? 5000 : 2500,
 })
+
+// Fast reject interceptor if deployed on web without backend server URL configured
+api.interceptors.request.use(
+  (config) => {
+    if (!isBackendAvailable) {
+      return Promise.reject(new Error('No backend API configured for remote environment'))
+    }
+    if (cachedToken) {
+      config.headers['Authorization'] = `Bearer ${cachedToken}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
 
 let cachedToken: string | null = null
 
@@ -23,16 +43,7 @@ supabase.auth.getSession().then(({ data: { session } }) => {
   }
 })
 
-// Request interceptor: attach JWT token fast without blocking async calls
-api.interceptors.request.use(
-  (config) => {
-    if (cachedToken) {
-      config.headers['Authorization'] = `Bearer ${cachedToken}`
-    }
-    return config
-  },
-  (error) => Promise.reject(error)
-)
+
 
 // Response interceptor: pass through or reject
 api.interceptors.response.use(

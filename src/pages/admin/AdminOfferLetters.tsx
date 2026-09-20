@@ -16,7 +16,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
@@ -75,7 +75,31 @@ export default function AdminOfferLetters() {
 
   const fetchOfferLetters = useCallback(async () => {
     setLoading(true)
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('offer_letters')
+        .select('*', { count: 'exact' })
+        .order('created_at', { ascending: false })
+
+      if (debouncedSearch) {
+        query = query.or(`student_name.ilike.%${debouncedSearch}%,letter_id.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: olData, count: olCount, error: olErr } = await query.range(from, to)
+
+      if (olErr) throw olErr
+      setOfferLetters(olData || [])
+      setTotal(olCount || 0)
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       const res = await api.get('/admin/offer-letters', { params })
@@ -85,22 +109,7 @@ export default function AdminOfferLetters() {
       setTotal(body?.pagination?.total ?? list.length)
     } catch {
       try {
-        let query = supabase
-          .from('offer_letters')
-          .select('*', { count: 'exact' })
-          .order('created_at', { ascending: false })
-
-        if (debouncedSearch) {
-          query = query.or(`student_name.ilike.%${debouncedSearch}%,letter_id.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: olData, count: olCount, error: olErr } = await query.range(from, to)
-
-        if (olErr) throw olErr
-        setOfferLetters(olData || [])
-        setTotal(olCount || 0)
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         toast({ title: 'Error', description: 'Failed to load offer letters library.', variant: 'destructive' })
       }

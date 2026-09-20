@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api from '@/services/api'
+import api, { isBackendAvailable } from '@/services/api'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import type { Internship } from '@/types'
@@ -62,7 +62,35 @@ export default function AdminInternships() {
 
   const fetchInternships = useCallback(async () => {
     setLoading(true)
+    const fetchFromSupabaseDirect = async () => {
+      let query = supabase
+        .from('internships')
+        .select('*', { count: 'exact' })
+        .neq('status', 'deleted')
+        .order('created_at', { ascending: false })
+
+      if (debouncedSearch) {
+        query = query.or(`title.ilike.%${debouncedSearch}%,company_name.ilike.%${debouncedSearch}%`)
+      }
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter)
+      }
+
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data: dbData, count: dbCount, error: dbErr } = await query.range(from, to)
+
+      if (dbErr) throw dbErr
+      setInternships(dbData || [])
+      setTotal(dbCount || 0)
+    }
+
     try {
+      if (!isBackendAvailable) {
+        await fetchFromSupabaseDirect()
+        return
+      }
+
       const params: Record<string, string | number> = {
         admin: 'true',
         page,
@@ -80,26 +108,7 @@ export default function AdminInternships() {
       setTotal(totalCount)
     } catch {
       try {
-        let query = supabase
-          .from('internships')
-          .select('*', { count: 'exact' })
-          .neq('status', 'deleted')
-          .order('created_at', { ascending: false })
-
-        if (debouncedSearch) {
-          query = query.or(`title.ilike.%${debouncedSearch}%,company_name.ilike.%${debouncedSearch}%`)
-        }
-        if (statusFilter !== 'all') {
-          query = query.eq('status', statusFilter)
-        }
-
-        const from = (page - 1) * PAGE_SIZE
-        const to = from + PAGE_SIZE - 1
-        const { data: dbData, count: dbCount, error: dbErr } = await query.range(from, to)
-
-        if (dbErr) throw dbErr
-        setInternships(dbData || [])
-        setTotal(dbCount || 0)
+        await fetchFromSupabaseDirect()
       } catch (fallbackErr) {
         toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
       }
