@@ -724,16 +724,16 @@ export function Home() {
           </div>
 
           {/* Clean Heading with Serif Accent */}
-          <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.25] sm:leading-[1.2] mb-6 font-sans text-slate-950 dark:text-white px-2">
-            Gain hands-on experience through project-based internships designed to help students develop practical skills, build strong portfolios, and prepare for the world of work with{' '}
+          <h1 className="text-3xl sm:text-5xl md:text-6xl font-extrabold tracking-tight leading-[1.2] mb-5 font-sans text-slate-950 dark:text-white px-2">
+            Project-Based Internships to Build Your Portfolio and{' '}
             <span className="font-serif italic text-blue-600 dark:text-blue-400 font-bold">
-              'geekintern'
+              Launch Your Tech Career
             </span>.
           </h1>
 
-          {/* Subtitle / Quote */}
-          <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base md:text-lg max-w-3xl mx-auto mb-8 sm:mb-10 leading-relaxed font-normal px-2">
-            Work on real software tickets, implement verified backend and frontend systems, and graduate with verifiable credentials trusted by hiring teams and colleges across India.
+          {/* Subtitle */}
+          <p className="text-slate-600 dark:text-slate-300 text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-8 sm:mb-10 leading-relaxed font-normal px-2">
+            Gain hands-on experience on real problem statements, build production-grade projects, and earn verified credentials with <span className="font-semibold text-slate-800 dark:text-slate-100">Geek Intern</span>.
           </p>
 
           {/* CTAs */}
