@@ -3,7 +3,7 @@
 Dedicated administration control panel for **Geek Intern**.
 
 ## Admin Login Credentials
-- **Email**: `mr.anantmaxx@gmail.com`
+- **Email**: `anantmaxx@gmail.com`
 - **Password**: `#7647077961Ag`
 
 ## Features

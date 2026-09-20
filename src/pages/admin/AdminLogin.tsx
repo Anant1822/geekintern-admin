@@ -97,8 +97,8 @@ export default function AdminLogin() {
                 id="email"
                 type="email"
                 autoComplete="email"
-                placeholder="mr.anantmaxx@gmail.com"
-                defaultValue="mr.anantmaxx@gmail.com"
+                placeholder="anantmaxx@gmail.com"
+                defaultValue="anantmaxx@gmail.com"
                 {...register('email')}
                 className={cn(
                   'bg-white/10 border-white/20 text-white placeholder:text-white/35 focus:border-brand-teal focus:ring-brand-teal/30',
