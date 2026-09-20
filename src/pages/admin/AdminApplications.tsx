@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
 const PAGE_SIZE = 15
@@ -46,71 +47,71 @@ const ALL_STATUSES = [
     value: 'all',
     label: 'All Leads',
     icon: Users,
-    color: 'text-slate-700',
-    bgColor: 'bg-slate-50',
-    borderColor: 'border-slate-200',
-    activeBg: 'bg-slate-900 text-white border-slate-900',
-    badgeClass: 'bg-slate-200 text-slate-800',
+    color: 'text-slate-700 dark:text-slate-300',
+    bgColor: 'bg-slate-50 dark:bg-slate-800/80',
+    borderColor: 'border-slate-200 dark:border-slate-700',
+    activeBg: 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100',
+    badgeClass: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
   },
   {
     value: 'pending',
     label: 'New / Pending',
     icon: Clock,
-    color: 'text-amber-700',
-    bgColor: 'bg-amber-50/70',
-    borderColor: 'border-amber-200',
+    color: 'text-amber-700 dark:text-amber-400',
+    bgColor: 'bg-amber-50/70 dark:bg-amber-950/30',
+    borderColor: 'border-amber-200 dark:border-amber-800/60',
     activeBg: 'bg-amber-600 text-white border-amber-600',
-    badgeClass: 'bg-amber-100 text-amber-800',
+    badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300',
   },
   {
     value: 'under_review',
     label: 'Under Review',
     icon: Search,
-    color: 'text-indigo-700',
-    bgColor: 'bg-indigo-50/70',
-    borderColor: 'border-indigo-200',
+    color: 'text-indigo-700 dark:text-indigo-400',
+    bgColor: 'bg-indigo-50/70 dark:bg-indigo-950/30',
+    borderColor: 'border-indigo-200 dark:border-indigo-800/60',
     activeBg: 'bg-indigo-600 text-white border-indigo-600',
-    badgeClass: 'bg-indigo-100 text-indigo-800',
+    badgeClass: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300',
   },
   {
     value: 'accepted',
     label: 'Accepted / Ongoing',
     icon: CheckCircle2,
-    color: 'text-emerald-700',
-    bgColor: 'bg-emerald-50/70',
-    borderColor: 'border-emerald-200',
+    color: 'text-emerald-700 dark:text-emerald-400',
+    bgColor: 'bg-emerald-50/70 dark:bg-emerald-950/30',
+    borderColor: 'border-emerald-200 dark:border-emerald-800/60',
     activeBg: 'bg-emerald-600 text-white border-emerald-600',
-    badgeClass: 'bg-emerald-100 text-emerald-800',
+    badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300',
   },
   {
     value: 'offer_sent',
     label: 'Offer Sent',
     icon: Send,
-    color: 'text-purple-700',
-    bgColor: 'bg-purple-50/70',
-    borderColor: 'border-purple-200',
+    color: 'text-purple-700 dark:text-purple-400',
+    bgColor: 'bg-purple-50/70 dark:bg-purple-950/30',
+    borderColor: 'border-purple-200 dark:border-purple-800/60',
     activeBg: 'bg-purple-600 text-white border-purple-600',
-    badgeClass: 'bg-purple-100 text-purple-800',
+    badgeClass: 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-300',
   },
   {
     value: 'completed',
     label: 'Completed & Certified',
     icon: FileCheck,
-    color: 'text-blue-700',
-    bgColor: 'bg-blue-50/70',
-    borderColor: 'border-blue-200',
+    color: 'text-blue-700 dark:text-blue-400',
+    bgColor: 'bg-blue-50/70 dark:bg-blue-950/30',
+    borderColor: 'border-blue-200 dark:border-blue-800/60',
     activeBg: 'bg-blue-600 text-white border-blue-600',
-    badgeClass: 'bg-blue-100 text-blue-800',
+    badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300',
   },
   {
     value: 'rejected',
     label: 'Rejected',
     icon: XCircle,
-    color: 'text-rose-700',
-    bgColor: 'bg-rose-50/70',
-    borderColor: 'border-rose-200',
+    color: 'text-rose-700 dark:text-rose-400',
+    bgColor: 'bg-rose-50/70 dark:bg-rose-950/30',
+    borderColor: 'border-rose-200 dark:border-rose-800/60',
     activeBg: 'bg-rose-600 text-white border-rose-600',
-    badgeClass: 'bg-rose-100 text-rose-800',
+    badgeClass: 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300',
   },
 ]
 
@@ -148,10 +149,9 @@ export default function AdminApplications() {
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'complete'>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [showFilters, setShowFilters] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
-  const [newStatus, setNewStatus] = useState<string>('')
-  const [showFilters, setShowFilters] = useState(false)
 
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({
     all: 0,
@@ -200,9 +200,76 @@ export default function AdminApplications() {
         ? body.pagination.total
         : (typeof body?.total === 'number' ? body.total : (Array.isArray(body?.data) ? body.data.length : 0))
       setTotal(totalCount)
-    } catch (err) {
-      console.error('Failed to load applications', err)
-      toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
+    } catch {
+      // Direct Supabase fallback
+      try {
+        const offset = (page - 1) * PAGE_SIZE
+        let query = supabase
+          .from('direct_applications')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (statusFilter && statusFilter !== 'all') {
+          if (statusFilter === 'pending') {
+            query = query.or('status.eq.pending,status.eq.submitted')
+          } else {
+            query = query.eq('status', statusFilter)
+          }
+        }
+
+        if (debouncedSearch) {
+          query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,phone.ilike.%${debouncedSearch}%,internship_title.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
+        }
+
+        if (dateFrom) {
+          query = query.gte('created_at', `${dateFrom}T00:00:00Z`)
+        }
+        if (dateTo) {
+          query = query.lte('created_at', `${dateTo}T23:59:59Z`)
+        }
+
+        query = query.range(offset, offset + PAGE_SIZE - 1)
+
+        const { data, count, error } = await query
+        if (error) throw error
+
+        setApplications((data as CustomerApplication[]) ?? [])
+        setTotal(count ?? data?.length ?? 0)
+
+        // Compute counts
+        const { data: allStatuses } = await supabase.from('direct_applications').select('status')
+        if (allStatuses) {
+          const counts: Record<string, number> = {
+            all: allStatuses.length,
+            pending: 0,
+            under_review: 0,
+            payment_pending: 0,
+            payment_complete: 0,
+            offer_sent: 0,
+            accepted: 0,
+            completed: 0,
+            rejected: 0,
+          }
+          allStatuses.forEach((row: any) => {
+            const s = row.status?.toLowerCase()
+            if (s === 'submitted' || s === 'pending') {
+              counts.pending = (counts.pending || 0) + 1
+            } else if (s === 'payment_pending') {
+              counts.payment_pending = (counts.payment_pending || 0) + 1
+              counts.under_review = (counts.under_review || 0) + 1
+            } else if (s === 'payment_complete') {
+              counts.payment_complete = (counts.payment_complete || 0) + 1
+              counts.under_review = (counts.under_review || 0) + 1
+            } else if (counts[s] !== undefined) {
+              counts[s] = (counts[s] || 0) + 1
+            }
+          })
+          setStatusCounts(counts)
+        }
+      } catch (fallbackErr) {
+        console.error('Failed to load applications:', fallbackErr)
+        toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
       setIsFetching(false)
@@ -222,9 +289,21 @@ export default function AdminApplications() {
       setApplications((prev) =>
         prev.map((a) => (a.id === id ? { ...a, status } : a))
       )
-    } catch (err) {
-      console.error('Status update failed', err)
-      toast({ title: 'Update Failed', description: 'Could not update status.', variant: 'destructive' })
+    } catch {
+      try {
+        const { error } = await supabase
+          .from('direct_applications')
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq('id', id)
+        if (error) throw error
+        toast({ title: 'Status updated successfully!' })
+        setApplications((prev) =>
+          prev.map((a) => (a.id === id ? { ...a, status } : a))
+        )
+      } catch (fallbackErr) {
+        console.error('Status update failed', fallbackErr)
+        toast({ title: 'Update Failed', description: 'Could not update status.', variant: 'destructive' })
+      }
     } finally {
       setUpdatingStatusId(null)
     }
@@ -463,7 +542,7 @@ export default function AdminApplications() {
         )}
 
         {/* Search & Secondary Filters */}
-        <Card className="border border-slate-200 shadow-xs bg-white">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
           <CardContent className="p-4 space-y-3">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
@@ -476,7 +555,7 @@ export default function AdminApplications() {
                   placeholder="Search by student name, email, phone, college, or domain..."
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800"
                 />
               </div>
               <Select
@@ -486,7 +565,7 @@ export default function AdminApplications() {
                   setPage(1)
                 }}
               >
-                <SelectTrigger className="w-full sm:w-52">
+                <SelectTrigger className="w-full sm:w-52 bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800">
                   <SelectValue placeholder="Filter Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -500,14 +579,14 @@ export default function AdminApplications() {
             </div>
 
             {showFilters && (
-              <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-slate-100">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <div className="flex-1">
-                  <Label className="text-xs mb-1 text-slate-600">From Date</Label>
-                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+                  <Label className="text-xs mb-1 text-slate-600 dark:text-slate-400">From Date</Label>
+                  <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800" />
                 </div>
                 <div className="flex-1">
-                  <Label className="text-xs mb-1 text-slate-600">To Date</Label>
-                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+                  <Label className="text-xs mb-1 text-slate-600 dark:text-slate-400">To Date</Label>
+                  <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800" />
                 </div>
                 <div className="flex items-end">
                   <Button
@@ -517,6 +596,7 @@ export default function AdminApplications() {
                       setDateFrom('')
                       setDateTo('')
                     }}
+                    className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
                   >
                     Reset Dates
                   </Button>
@@ -655,30 +735,30 @@ export default function AdminApplications() {
 
                         {/* Detailed Card View on Row Click */}
                         {isExpanded && (
-                          <tr key={`${app.id}-details`} className="bg-slate-50/80">
-                            <td colSpan={8} className="p-6 border-t border-b border-slate-200">
+                          <tr key={`${app.id}-details`} className="bg-slate-50/80 dark:bg-slate-800/50">
+                            <td colSpan={8} className="p-6 border-t border-b border-slate-200 dark:border-slate-800">
                               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {/* Academic & Profile Links */}
                                 <div className="space-y-3">
-                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500">
+                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                                     Academic Details & Links
                                   </h4>
-                                  <div className="text-xs space-y-2 text-slate-700 bg-white p-4 rounded-xl border border-slate-200">
+                                  <div className="text-xs space-y-2 text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                     <div className="flex items-center gap-2">
                                       <Building className="h-3.5 w-3.5 text-slate-400" />
-                                      <span><strong>College:</strong> {app.college_name}</span>
+                                      <span><strong className="text-slate-900 dark:text-white">College:</strong> {app.college_name}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <GraduationCap className="h-3.5 w-3.5 text-slate-400" />
-                                      <span><strong>Branch / Year:</strong> {app.branch} ({app.year_of_study})</span>
+                                      <span><strong className="text-slate-900 dark:text-white">Branch / Year:</strong> {app.branch} ({app.year_of_study})</span>
                                     </div>
-                                    <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1.5">
                                       {app.linkedin_url && (
                                         <a
                                           href={app.linkedin_url}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+                                          className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
                                         >
                                           <ExternalLink className="h-3 w-3" /> LinkedIn Profile
                                         </a>
@@ -688,7 +768,7 @@ export default function AdminApplications() {
                                           href={app.github_url}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-slate-800 hover:underline inline-flex items-center gap-1 font-medium"
+                                          className="text-slate-800 dark:text-slate-300 hover:underline inline-flex items-center gap-1 font-medium"
                                         >
                                           <ExternalLink className="h-3 w-3" /> GitHub Profile
                                         </a>
@@ -698,7 +778,7 @@ export default function AdminApplications() {
                                           href={app.resume_url}
                                           target="_blank"
                                           rel="noreferrer"
-                                          className="text-emerald-600 hover:underline inline-flex items-center gap-1 font-medium"
+                                          className="text-emerald-600 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 font-medium"
                                         >
                                           <ExternalLink className="h-3 w-3" /> Resume / Drive Link
                                         </a>
@@ -712,10 +792,10 @@ export default function AdminApplications() {
 
                                 {/* Applicant Message */}
                                 <div className="space-y-3">
-                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500">
+                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                                     Learning Goals & Message
                                   </h4>
-                                  <div className="bg-white p-4 rounded-xl border border-slate-200 text-xs text-slate-700 min-h-[100px]">
+                                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 min-h-[100px]">
                                     {app.message ? (
                                       <p className="whitespace-pre-wrap">{app.message}</p>
                                     ) : (
@@ -726,16 +806,16 @@ export default function AdminApplications() {
 
                                 {/* Manage Application Status */}
                                 <div className="space-y-3">
-                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500">
+                                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                                     Update Application Status
                                   </h4>
-                                  <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+                                  <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
                                     <Select
                                       defaultValue={app.status}
                                       onValueChange={(val) => handleStatusUpdate(app.id, val)}
                                       disabled={updatingStatusId === app.id}
                                     >
-                                      <SelectTrigger className="w-full">
+                                      <SelectTrigger className="w-full bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800">
                                         <SelectValue placeholder="Select Status" />
                                       </SelectTrigger>
                                       <SelectContent>
@@ -750,7 +830,7 @@ export default function AdminApplications() {
                                       </SelectContent>
                                     </Select>
 
-                                    <div className="text-[11px] text-slate-500">
+                                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
                                       Changing status updates the internal applicant pipeline in real-time.
                                     </div>
 
@@ -779,8 +859,8 @@ export default function AdminApplications() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50/50">
-              <span className="text-xs text-slate-500">
+            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+              <span className="text-xs text-slate-500 dark:text-slate-400">
                 Page {page} of {totalPages}
               </span>
               <div className="flex items-center gap-2">
@@ -789,6 +869,7 @@ export default function AdminApplications() {
                   size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
+                  className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300"
                 >
                   <ChevronLeft className="h-4 w-4 mr-1" /> Prev
                 </Button>
@@ -797,6 +878,7 @@ export default function AdminApplications() {
                   size="sm"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => p + 1)}
+                  className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300"
                 >
                   Next <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>

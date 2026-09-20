@@ -34,6 +34,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, getInitials, cn } from '@/lib/utils'
 
 const PAGE_SIZE = 15
@@ -152,7 +153,129 @@ export default function AdminUsers() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load students.', variant: 'destructive' })
+      // Fallback directly to Supabase client: fetch direct_applications & certificates
+      try {
+        let appQuery = supabase
+          .from('direct_applications')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (debouncedSearch) {
+          appQuery = appQuery.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,phone.ilike.%${debouncedSearch}%,internship_title.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
+        }
+
+        const [
+          { data: directApps, error: directErr },
+          { data: certificates },
+          { data: settingsRows },
+        ] = await Promise.all([
+          appQuery,
+          supabase.from('certificates').select('*'),
+          supabase.from('app_settings').select('*').in('key', ['certificate_images_library', 'offer_letters_library']),
+        ])
+
+        if (directErr) throw directErr
+
+        let imageLibMap: Record<string, { image_url: string }> = {}
+        let offerLettersMap: Record<string, any> = {}
+
+        settingsRows?.forEach((row: any) => {
+          try {
+            if (row.key === 'certificate_images_library' && row.value) {
+              imageLibMap = JSON.parse(row.value)
+            } else if (row.key === 'offer_letters_library' && row.value) {
+              offerLettersMap = JSON.parse(row.value)
+            }
+          } catch {
+            // ignore
+          }
+        })
+
+        const certMap = new Map<string, any>()
+        certificates?.forEach((c: any) => {
+          if (c.student_name) {
+            const nameKey = c.student_name.toLowerCase().trim()
+            const certKey = (c.certificate_id || '').toUpperCase().trim()
+            if (!certMap.has(nameKey)) {
+              certMap.set(nameKey, {
+                ...c,
+                image_url: imageLibMap[certKey]?.image_url || null,
+              })
+            }
+          }
+        })
+
+        let mappedStudents: RegisteredStudentItem[] = (directApps || []).map((d: any) => {
+          const nameKey = (d.full_name || '').toLowerCase().trim()
+          const emailKey = (d.email || '').toLowerCase().trim()
+          const cert = certMap.get(nameKey) || null
+          const offerLetter = offerLettersMap[emailKey] || offerLettersMap[nameKey] || null
+
+          return {
+            id: d.id,
+            application_id: d.id,
+            full_name: d.full_name,
+            email: d.email,
+            phone: d.phone,
+            college_name: d.college_name,
+            branch: d.branch,
+            graduation_year: d.year_of_study,
+            year_of_study: d.year_of_study,
+            internship_title: d.internship_title,
+            duration: d.duration,
+            linkedin_url: d.linkedin_url,
+            github_url: d.github_url,
+            resume_url: d.resume_url,
+            message: d.message,
+            role: 'student',
+            status: d.status || 'pending',
+            is_verified: d.status === 'completed' || d.status === 'accepted' || d.status === 'offer_sent',
+            source: 'application_registered',
+            created_at: d.created_at,
+            updated_at: d.updated_at || d.created_at,
+            certificate: cert,
+            has_certificate: Boolean(cert),
+            offer_letter: offerLetter,
+            has_offer_letter: Boolean(offerLetter),
+          }
+        })
+
+        // Status counts
+        const counts: Record<string, number> = {
+          all: mappedStudents.length,
+          accepted: 0,
+          offer_sent: 0,
+          completed: 0,
+          under_review: 0,
+          pending: 0,
+        }
+        mappedStudents.forEach((s) => {
+          const st = (s.status || '').toLowerCase()
+          if (st === 'accepted') counts.accepted++
+          else if (st === 'offer_sent') counts.offer_sent++
+          else if (st === 'completed') counts.completed++
+          else if (st === 'under_review') counts.under_review++
+          else if (st === 'pending' || st === 'submitted') counts.pending++
+        })
+        setStatusCounts(counts)
+
+        // Filter
+        if (statusFilter && statusFilter !== 'all') {
+          if (statusFilter === 'pending') {
+            mappedStudents = mappedStudents.filter((s) => s.status === 'pending' || s.status === 'submitted')
+          } else {
+            mappedStudents = mappedStudents.filter((s) => (s.status || '').toLowerCase() === statusFilter.toLowerCase())
+          }
+        }
+
+        const totalCount = mappedStudents.length
+        const offset = (page - 1) * PAGE_SIZE
+        setStudents(mappedStudents.slice(offset, offset + PAGE_SIZE))
+        setTotal(totalCount)
+      } catch (fallbackErr) {
+        console.error('Failed to load students:', fallbackErr)
+        toast({ title: 'Error', description: 'Failed to load students.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }
@@ -225,15 +348,79 @@ export default function AdminUsers() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Registered Students</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Registered Students</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
               Verified students who are accepted, ongoing, offer letter sent, or completed certified learners.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 shadow-xs">
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 shadow-xs border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">
             <Download className="h-4 w-4" />
             Export Registered CSV
           </Button>
+        </div>
+
+        {/* Status Filter Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          {REGISTERED_STATUS_TABS.map((tab) => {
+            const Icon = tab.icon
+            const isSelected = statusFilter === tab.value
+            const count = statusCounts[tab.value] ?? (tab.value === 'all' ? total : 0)
+
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => {
+                  setStatusFilter(tab.value)
+                  setPage(1)
+                }}
+                className={cn(
+                  'flex flex-col items-start justify-between p-3.5 rounded-xl border text-left transition-all relative overflow-hidden group',
+                  isSelected
+                    ? `${tab.activeClass} shadow-md ring-2 ring-offset-2 ring-slate-400 scale-[1.02]`
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-slate-400 hover:shadow-xs'
+                )}
+              >
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div
+                    className={cn(
+                      'p-1.5 rounded-lg',
+                      isSelected ? 'bg-white/20 text-white' : `${tab.color} dark:text-blue-400 bg-slate-50 dark:bg-slate-700/60 shadow-xs border border-slate-100 dark:border-slate-600`
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <span
+                    className={cn(
+                      'text-xs font-bold px-2 py-0.5 rounded-full',
+                      isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                    )}
+                  >
+                    {count}
+                  </span>
+                </div>
+
+                <div className="w-full">
+                  <div
+                    className={cn(
+                      'text-xs font-semibold leading-snug truncate',
+                      isSelected ? 'text-white' : 'text-slate-800 dark:text-slate-200'
+                    )}
+                  >
+                    {tab.label}
+                  </div>
+                  <div
+                    className={cn(
+                      'text-[10px] mt-0.5',
+                      isSelected ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'
+                    )}
+                  >
+                    {isSelected ? 'Active Filter' : 'Click to filter'}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         {/* Search Input */}
@@ -245,7 +432,7 @@ export default function AdminUsers() {
                 placeholder="Search registered students by name, email, phone, college, or domain..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-9 text-sm bg-transparent text-slate-900 dark:text-white"
+                className="pl-9 text-sm bg-transparent text-slate-900 dark:text-white border-slate-200 dark:border-slate-800"
               />
             </div>
           </CardContent>
@@ -363,9 +550,9 @@ export default function AdminUsers() {
 
       {/* Comprehensive Student Profile Modal showing ALL Details */}
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between pr-4">
+            <DialogTitle className="flex items-center justify-between pr-4 text-slate-900 dark:text-white">
               <span>Complete Student Details</span>
               {selected && getStudentStatusBadge(selected.status)}
             </DialogTitle>
@@ -373,18 +560,18 @@ export default function AdminUsers() {
           {selected && (
             <div className="space-y-5 pt-2">
               {/* Header profile card */}
-              <div className="flex items-start gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
-                <Avatar className="h-16 w-16 border-2 border-white shadow-xs">
+              <div className="flex items-start gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                <Avatar className="h-16 w-16 border-2 border-white dark:border-slate-800 shadow-xs">
                   <AvatarFallback className="bg-blue-600 text-white text-xl font-bold">
                     {getInitials(selected.full_name)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-gray-900 text-lg leading-snug truncate">{selected.full_name}</h3>
-                    <Badge className="bg-blue-100 text-blue-800 text-[10px]">Registered Candidate</Badge>
+                    <h3 className="font-bold text-slate-900 dark:text-white text-lg leading-snug truncate">{selected.full_name}</h3>
+                    <Badge className="bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-[10px]">Registered Candidate</Badge>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 mt-1">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-300 mt-1">
                     <span className="flex items-center gap-1 font-medium">
                       <Mail className="h-3.5 w-3.5 text-slate-400" /> {selected.email}
                     </span>
@@ -399,52 +586,52 @@ export default function AdminUsers() {
 
               {/* Academic Details */}
               <div>
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                  <GraduationCap className="h-4 w-4 text-blue-600" /> Academic Information
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                  <GraduationCap className="h-4 w-4 text-blue-600 dark:text-blue-400" /> Academic Information
                 </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-white p-4 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                   <div>
                     <span className="text-slate-400 block mb-0.5">College Name</span>
-                    <span className="font-semibold text-slate-800">{selected.college_name || '—'}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.college_name || '—'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block mb-0.5">Branch / Discipline</span>
-                    <span className="font-semibold text-slate-800">{selected.branch || '—'}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.branch || '—'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block mb-0.5">Year of Study</span>
-                    <span className="font-semibold text-slate-800">{selected.year_of_study || selected.graduation_year || '—'}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.year_of_study || selected.graduation_year || '—'}</span>
                   </div>
                 </div>
               </div>
 
               {/* Internship Program Enrolled */}
               <div>
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                  <Briefcase className="h-4 w-4 text-purple-600" /> Internship Enrollment
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                  <Briefcase className="h-4 w-4 text-purple-600 dark:text-purple-400" /> Internship Enrollment
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white p-4 rounded-xl border border-slate-200">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                   <div>
                     <span className="text-slate-400 block mb-0.5">Track / Domain</span>
-                    <span className="font-semibold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 inline-block">
+                    <span className="font-semibold text-blue-900 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-100 dark:border-blue-800 inline-block">
                       {selected.internship_title || 'General Internship Program'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block mb-0.5">Duration</span>
-                    <span className="font-semibold text-slate-800">{selected.duration || '4 Weeks'}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.duration || '4 Weeks'}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 block mb-0.5">Enrolled / Registered At</span>
-                    <span className="font-semibold text-slate-800">{formatDate(selected.created_at)}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{formatDate(selected.created_at)}</span>
                   </div>
                 </div>
               </div>
 
               {/* Certificate Details */}
-              <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/40">
+              <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/40 dark:bg-amber-950/20">
                 <div className="flex items-center justify-between mb-2.5">
-                  <h4 className="text-xs uppercase font-bold tracking-wider text-amber-900 flex items-center gap-1.5">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-amber-900 dark:text-amber-400 flex items-center gap-1.5">
                     <Award className="h-4 w-4 text-amber-600" /> Certificate & Completion Status
                   </h4>
                   {selected.has_certificate ? (
@@ -452,7 +639,7 @@ export default function AdminUsers() {
                       Verified & Issued
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-amber-800 border-amber-300 bg-amber-100/60 text-[11px] px-2 py-0.5">
+                    <Badge variant="outline" className="text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 bg-amber-100/60 dark:bg-amber-900/40 text-[11px] px-2 py-0.5">
                       Pending Completion
                     </Badge>
                   )}
@@ -460,38 +647,38 @@ export default function AdminUsers() {
 
                 {selected.certificate ? (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-white p-3 rounded-lg border border-amber-100">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-white dark:bg-slate-800 p-3 rounded-lg border border-amber-100 dark:border-amber-900/40">
                       <div>
                         <span className="text-slate-400 block mb-0.5">Certificate ID</span>
-                        <span className="font-bold text-slate-900 font-mono tracking-wide">{selected.certificate.certificate_id}</span>
+                        <span className="font-bold text-slate-900 dark:text-white font-mono tracking-wide">{selected.certificate.certificate_id}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Domain</span>
-                        <span className="font-semibold text-slate-800">{selected.certificate.domain}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.certificate.domain}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Issue Date</span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
                           {selected.certificate.issue_date ? formatDate(selected.certificate.issue_date) : '—'}
                         </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Grade / Evaluation</span>
-                        <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-block">
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 inline-block">
                           {selected.certificate.grade || 'A+'}
                         </span>
                       </div>
                     </div>
 
                     {selected.certificate.image_url && (
-                      <div className="pt-2 border-t border-amber-100 flex items-center justify-between">
+                      <div className="pt-2 border-t border-amber-100 dark:border-amber-900/40 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <img
                             src={selected.certificate.image_url}
                             alt="Certificate Document"
-                            className="h-10 w-14 object-cover rounded border border-amber-200"
+                            className="h-10 w-14 object-cover rounded border border-amber-200 dark:border-amber-800"
                           />
-                          <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+                          <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
                             <CheckCircle2 className="h-3.5 w-3.5" /> Cloud Library Image Attached
                           </span>
                         </div>
@@ -499,7 +686,7 @@ export default function AdminUsers() {
                           href={selected.certificate.image_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-700 hover:underline font-semibold"
+                          className="text-xs text-blue-700 dark:text-blue-400 hover:underline font-semibold"
                         >
                           View Full File ↗
                         </a>
@@ -507,39 +694,39 @@ export default function AdminUsers() {
                     )}
 
                     <div className="flex items-center justify-between text-xs pt-1">
-                      <span className="text-slate-600">
-                        Duration: <span className="font-medium text-slate-900">{selected.certificate.duration || '4 Weeks'}</span>
+                      <span className="text-slate-600 dark:text-slate-400">
+                        Duration: <span className="font-medium text-slate-900 dark:text-white">{selected.certificate.duration || '4 Weeks'}</span>
                       </span>
                       <a
                         href={`/verify?id=${encodeURIComponent(selected.certificate.certificate_id)}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                        className="inline-flex items-center gap-1 font-semibold text-blue-700 dark:text-blue-400 hover:underline"
                       >
                         <ExternalLink className="h-3.5 w-3.5" /> View Public Verification Page ↗
                       </a>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-600 bg-white/70 p-3 rounded-lg border border-amber-100">
+                  <div className="text-xs text-slate-600 dark:text-slate-400 bg-white/70 dark:bg-slate-800/60 p-3 rounded-lg border border-amber-100 dark:border-amber-900/40">
                     <p>No certificate issued yet. Once this student is marked as completed in applications, an official certificate ID and credential link are automatically generated.</p>
                   </div>
                 )}
               </div>
 
               {/* Official Offer Letter Details */}
-              <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 border border-blue-200 rounded-xl p-4 space-y-3">
+              <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800/60 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Send className="h-4 w-4 text-blue-700" />
-                    <h4 className="text-xs uppercase font-bold tracking-wider text-blue-950">Official Internship Offer Letter</h4>
+                    <Send className="h-4 w-4 text-blue-700 dark:text-blue-400" />
+                    <h4 className="text-xs uppercase font-bold tracking-wider text-blue-950 dark:text-blue-300">Official Internship Offer Letter</h4>
                   </div>
                   {selected.offer_letter ? (
                     <Badge className="bg-blue-600 text-white text-[11px] px-2 py-0.5">
                       Offer Letter Issued
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-slate-600 border-slate-300 bg-white/60 text-[11px] px-2 py-0.5">
+                    <Badge variant="outline" className="text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 text-[11px] px-2 py-0.5">
                       Not Issued Yet
                     </Badge>
                   )}
@@ -547,38 +734,38 @@ export default function AdminUsers() {
 
                 {selected.offer_letter ? (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-white p-3 rounded-lg border border-blue-100">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs bg-white dark:bg-slate-800 p-3 rounded-lg border border-blue-100 dark:border-blue-900/40">
                       <div>
                         <span className="text-slate-400 block mb-0.5">Offer Letter ID</span>
-                        <span className="font-bold text-blue-700 font-mono tracking-wide">{selected.offer_letter.letter_id}</span>
+                        <span className="font-bold text-blue-700 dark:text-blue-400 font-mono tracking-wide">{selected.offer_letter.letter_id}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Track / Domain</span>
-                        <span className="font-semibold text-slate-800">{selected.offer_letter.domain}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{selected.offer_letter.domain}</span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Start Date</span>
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
                           {selected.offer_letter.start_date ? formatDate(selected.offer_letter.start_date) : 'Immediate'}
                         </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block mb-0.5">Stipend</span>
-                        <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-block">
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 inline-block">
                           {selected.offer_letter.stipend || 'Performance Based'}
                         </span>
                       </div>
                     </div>
 
                     {selected.offer_letter.image_url && (
-                      <div className="pt-2 border-t border-blue-100 flex items-center justify-between">
+                      <div className="pt-2 border-t border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <img
                             src={selected.offer_letter.image_url}
                             alt="Offer Letter Document"
-                            className="h-10 w-14 object-cover rounded border border-blue-200"
+                            className="h-10 w-14 object-cover rounded border border-blue-200 dark:border-blue-800"
                           />
-                          <span className="text-xs text-blue-700 font-semibold flex items-center gap-1">
+                          <span className="text-xs text-blue-700 dark:text-blue-400 font-semibold flex items-center gap-1">
                             <CheckCircle2 className="h-3.5 w-3.5" /> Cloud Document Uploaded
                           </span>
                         </div>
@@ -586,7 +773,7 @@ export default function AdminUsers() {
                           href={selected.offer_letter.image_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-blue-700 hover:underline font-semibold"
+                          className="text-xs text-blue-700 dark:text-blue-400 hover:underline font-semibold"
                         >
                           View Document ↗
                         </a>
@@ -594,25 +781,25 @@ export default function AdminUsers() {
                     )}
 
                     <div className="flex items-center justify-between text-xs pt-1">
-                      <span className="text-slate-600">
-                        Duration: <span className="font-medium text-slate-900">{selected.offer_letter.duration || '4 Weeks'}</span>
+                      <span className="text-slate-600 dark:text-slate-400">
+                        Duration: <span className="font-medium text-slate-900 dark:text-white">{selected.offer_letter.duration || '4 Weeks'}</span>
                       </span>
                       <a
                         href={`/verify-offer-letter?id=${encodeURIComponent(selected.offer_letter.letter_id)}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                        className="inline-flex items-center gap-1 font-semibold text-blue-700 dark:text-blue-400 hover:underline"
                       >
                         <ExternalLink className="h-3.5 w-3.5" /> View Public Offer Letter Page ↗
                       </a>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-slate-600 bg-white/70 p-3 rounded-lg border border-blue-100 flex items-center justify-between">
+                  <div className="text-xs text-slate-600 dark:text-slate-400 bg-white/70 dark:bg-slate-800/60 p-3 rounded-lg border border-blue-100 dark:border-blue-900/40 flex items-center justify-between">
                     <p>No offer letter generated yet for this student.</p>
                     <a
                       href="/admin/offer-letters"
-                      className="text-xs text-blue-600 hover:underline font-semibold"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold"
                     >
                       Issue in Offer Letter Library ↗
                     </a>
@@ -622,16 +809,16 @@ export default function AdminUsers() {
 
               {/* External Profiles & Resume */}
               <div>
-                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 mb-2 flex items-center gap-1.5">
-                  <ExternalLink className="h-4 w-4 text-emerald-600" /> Profiles & Resume Documents
+                <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                  <ExternalLink className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Profiles & Resume Documents
                 </h4>
-                <div className="flex flex-wrap gap-2 text-xs bg-white p-4 rounded-xl border border-slate-200">
+                <div className="flex flex-wrap gap-2 text-xs bg-white dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
                   {selected.resume_url ? (
                     <a
                       href={selected.resume_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-medium transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-medium transition-colors"
                     >
                       <FileCheck className="h-3.5 w-3.5" /> View Resume Document ↗
                     </a>
@@ -643,7 +830,7 @@ export default function AdminUsers() {
                       href={selected.linkedin_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-medium transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 font-medium transition-colors"
                     >
                       <ExternalLink className="h-3.5 w-3.5" /> LinkedIn ↗
                     </a>
@@ -653,7 +840,7 @@ export default function AdminUsers() {
                       href={selected.github_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-800 border border-slate-200 hover:bg-slate-200 font-medium transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 font-medium transition-colors"
                     >
                       <ExternalLink className="h-3.5 w-3.5" /> GitHub ↗
                     </a>
@@ -664,18 +851,18 @@ export default function AdminUsers() {
               {/* Applicant Message / Notes */}
               {selected.message && (
                 <div>
-                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 mb-1.5">
+                  <h4 className="text-xs uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
                     Candidate Statement / Message
                   </h4>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
                     {selected.message}
                   </div>
                 </div>
               )}
 
               {/* Quick Communication Actions */}
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
-                <Button asChild size="sm" variant="outline" className="text-xs gap-1.5">
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                <Button asChild size="sm" variant="outline" className="text-xs gap-1.5 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">
                   <a href={`mailto:${selected.email}?subject=Intership Update - ${encodeURIComponent(selected.internship_title || 'Internship')}`}>
                     <Mail className="h-3.5 w-3.5" /> Email Student
                   </a>

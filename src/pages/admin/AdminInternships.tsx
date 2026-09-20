@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import type { Internship } from '@/types'
 
@@ -25,12 +26,12 @@ type StatusFilter = 'all' | 'draft' | 'published' | 'archived'
 
 function statusBadge(internship: Internship) {
   if (internship.status === 'archived' || internship.is_active === false) {
-    return <Badge className="bg-gray-100 text-gray-600 border-gray-200 text-xs">Archived</Badge>
+    return <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 text-xs">Archived</Badge>
   }
   if (internship.status === 'draft' || !internship.is_verified) {
-    return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 text-xs">Draft</Badge>
+    return <Badge className="bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800 text-xs">Draft</Badge>
   }
-  return <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Published</Badge>
+  return <Badge className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 text-xs">Published</Badge>
 }
 
 export default function AdminInternships() {
@@ -78,7 +79,41 @@ export default function AdminInternships() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
+      // Fallback directly to Supabase client
+      try {
+        const offset = (page - 1) * PAGE_SIZE
+        let query = supabase
+          .from('internships')
+          .select('*, category:internship_categories(id, name, slug)', { count: 'exact' })
+
+        if (statusFilter && statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
+        } else {
+          query = query.neq('status', 'deleted')
+        }
+
+        if (debouncedSearch) {
+          query = query.ilike('title', `%${debouncedSearch}%`)
+        }
+
+        query = query
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        const { data, count, error } = await query
+        if (error) throw error
+
+        const formatted = (data ?? []).map((item: any) => ({
+          ...item,
+          is_paid: item.is_paid_internship ?? false,
+          deadline: item.application_deadline,
+        }))
+        setInternships(formatted)
+        setTotal(count ?? formatted.length)
+      } catch (fallbackErr) {
+        console.error('Failed to load internships:', fallbackErr)
+        toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }
@@ -99,7 +134,14 @@ export default function AdminInternships() {
       toast({ title: `Internship ${willPublish ? 'published' : 'moved to draft'}.` })
       fetchInternships()
     } catch {
-      toast({ title: 'Error', description: 'Could not update status.', variant: 'destructive' })
+      try {
+        const { error } = await supabase.from('internships').update(patch).eq('id', internship.id)
+        if (error) throw error
+        toast({ title: `Internship ${willPublish ? 'published' : 'moved to draft'}.` })
+        fetchInternships()
+      } catch {
+        toast({ title: 'Error', description: 'Could not update status.', variant: 'destructive' })
+      }
     }
   }
 
@@ -109,17 +151,32 @@ export default function AdminInternships() {
       toast({ title: `Featured ${!internship.is_featured ? 'enabled' : 'disabled'}.` })
       fetchInternships()
     } catch {
-      toast({ title: 'Error', description: 'Could not toggle featured.', variant: 'destructive' })
+      try {
+        const { error } = await supabase.from('internships').update({ is_featured: !internship.is_featured }).eq('id', internship.id)
+        if (error) throw error
+        toast({ title: `Featured ${!internship.is_featured ? 'enabled' : 'disabled'}.` })
+        fetchInternships()
+      } catch {
+        toast({ title: 'Error', description: 'Could not toggle featured.', variant: 'destructive' })
+      }
     }
   }
 
   const archiveInternship = async (internship: Internship) => {
+    const patch = { status: 'archived', is_verified: false }
     try {
-      await api.patch(`/internships/${internship.id}`, { status: 'archived', is_verified: false })
+      await api.patch(`/internships/${internship.id}`, patch)
       toast({ title: 'Internship archived.' })
       fetchInternships()
     } catch {
-      toast({ title: 'Error', description: 'Could not archive.', variant: 'destructive' })
+      try {
+        const { error } = await supabase.from('internships').update(patch).eq('id', internship.id)
+        if (error) throw error
+        toast({ title: 'Internship archived.' })
+        fetchInternships()
+      } catch {
+        toast({ title: 'Error', description: 'Could not archive.', variant: 'destructive' })
+      }
     }
   }
 
@@ -132,7 +189,15 @@ export default function AdminInternships() {
       setDeleteTarget(null)
       fetchInternships()
     } catch {
-      toast({ title: 'Error', description: 'Could not delete internship.', variant: 'destructive' })
+      try {
+        const { error } = await supabase.from('internships').delete().eq('id', deleteTarget.id)
+        if (error) throw error
+        toast({ title: 'Internship deleted.' })
+        setDeleteTarget(null)
+        fetchInternships()
+      } catch {
+        toast({ title: 'Error', description: 'Could not delete internship.', variant: 'destructive' })
+      }
     } finally {
       setDeleteLoading(false)
     }
@@ -141,16 +206,24 @@ export default function AdminInternships() {
   const handleBulk = async (action: 'publish' | 'archive') => {
     if (!selected.size) return
     setBulkLoading(true)
+    const patch = action === 'publish'
+      ? { is_verified: true, status: 'published' }
+      : { status: 'archived', is_verified: false }
     try {
-      const patch = action === 'publish'
-        ? { is_verified: true, status: 'published' }
-        : { status: 'archived', is_verified: false }
       await Promise.all([...selected].map((id) => api.patch(`/internships/${id}`, patch)))
       toast({ title: `Bulk ${action} complete.` })
       setSelected(new Set())
       fetchInternships()
     } catch {
-      toast({ title: 'Error', description: `Bulk ${action} failed.`, variant: 'destructive' })
+      try {
+        const { error } = await supabase.from('internships').update(patch).in('id', [...selected])
+        if (error) throw error
+        toast({ title: `Bulk ${action} complete.` })
+        setSelected(new Set())
+        fetchInternships()
+      } catch {
+        toast({ title: 'Error', description: `Bulk ${action} failed.`, variant: 'destructive' })
+      }
     } finally {
       setBulkLoading(false)
     }
@@ -343,17 +416,17 @@ export default function AdminInternships() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
           <DialogHeader>
-            <DialogTitle>Delete Internship</DialogTitle>
+            <DialogTitle className="text-slate-900 dark:text-white">Delete Internship</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Are you sure you want to permanently delete{' '}
-            <span className="font-semibold text-gray-900">"{deleteTarget?.title}"</span>?
+            <span className="font-semibold text-slate-900 dark:text-white">"{deleteTarget?.title}"</span>?
             This action cannot be undone.
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300">Cancel</Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={deleteLoading}>
               {deleteLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Delete Permanently
