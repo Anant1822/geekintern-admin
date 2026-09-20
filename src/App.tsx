@@ -14,6 +14,7 @@ import AdminOfferLetters from '@/pages/admin/AdminOfferLetters'
 import AdminSettings from '@/pages/admin/AdminSettings'
 import AdminInquiries from '@/pages/admin/AdminInquiries'
 import AdminMessages from '@/pages/admin/AdminMessages'
+import AdminRoute from '@/components/common/AdminRoute'
 import { useAuthInit } from '@/hooks/useAuth'
 
 export default function App() {
@@ -22,25 +23,24 @@ export default function App() {
     <ErrorBoundary>
       <Suspense fallback={<LoadingPage />}>
         <Routes>
-          {/* Root defaults to Admin Dashboard */}
-          <Route path="/" element={<Navigate to="/admin" replace />} />
-
-          {/* Admin Authentication & Console Routes */}
+          {/* Admin Authentication Routes */}
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/login" element={<AdminLogin />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/internships" element={<AdminInternships />} />
-          <Route path="/admin/internships/new" element={<AdminInternshipForm />} />
-          <Route path="/admin/internships/:id/edit" element={<AdminInternshipForm />} />
-          <Route path="/admin/applications" element={<AdminApplications />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/certificates" element={<AdminCertificates />} />
-          <Route path="/admin/offer-letters" element={<AdminOfferLetters />} />
-          <Route path="/admin/settings" element={<AdminSettings />} />
-          <Route path="/admin/inquiries" element={<AdminInquiries />} />
-          <Route path="/admin/messages" element={<AdminMessages />} />
 
-          {/* Any other route redirects to admin */}
+          {/* Protected Admin Console Routes */}
+          <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+          <Route path="/admin/internships" element={<AdminRoute><AdminInternships /></AdminRoute>} />
+          <Route path="/admin/internships/new" element={<AdminRoute><AdminInternshipForm /></AdminRoute>} />
+          <Route path="/admin/internships/:id/edit" element={<AdminRoute><AdminInternshipForm /></AdminRoute>} />
+          <Route path="/admin/applications" element={<AdminRoute><AdminApplications /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+          <Route path="/admin/certificates" element={<AdminRoute><AdminCertificates /></AdminRoute>} />
+          <Route path="/admin/offer-letters" element={<AdminRoute><AdminOfferLetters /></AdminRoute>} />
+          <Route path="/admin/settings" element={<AdminRoute><AdminSettings /></AdminRoute>} />
+          <Route path="/admin/inquiries" element={<AdminRoute><AdminInquiries /></AdminRoute>} />
+          <Route path="/admin/messages" element={<AdminRoute><AdminMessages /></AdminRoute>} />
+
+          {/* Any other route redirects to /admin */}
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </Suspense>

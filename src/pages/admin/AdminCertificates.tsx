@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
 interface CertificateItem {
@@ -81,7 +82,26 @@ export default function AdminCertificates() {
       setCertificates(list)
       setTotal(body?.pagination?.total ?? list.length)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load certificates library.', variant: 'destructive' })
+      try {
+        let query = supabase
+          .from('certificates')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (debouncedSearch) {
+          query = query.or(`student_name.ilike.%${debouncedSearch}%,certificate_id.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: certData, count: certCount, error: certErr } = await query.range(from, to)
+
+        if (certErr) throw certErr
+        setCertificates(certData || [])
+        setTotal(certCount || 0)
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to load certificates library.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }

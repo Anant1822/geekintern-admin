@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import type { Internship } from '@/types'
 
@@ -78,7 +79,30 @@ export default function AdminInternships() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
+      try {
+        let query = supabase
+          .from('internships')
+          .select('*', { count: 'exact' })
+          .neq('status', 'deleted')
+          .order('created_at', { ascending: false })
+
+        if (debouncedSearch) {
+          query = query.or(`title.ilike.%${debouncedSearch}%,company_name.ilike.%${debouncedSearch}%`)
+        }
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: dbData, count: dbCount, error: dbErr } = await query.range(from, to)
+
+        if (dbErr) throw dbErr
+        setInternships(dbData || [])
+        setTotal(dbCount || 0)
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }

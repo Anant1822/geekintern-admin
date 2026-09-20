@@ -25,6 +25,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
 interface ContactMessageItem {
@@ -76,7 +77,42 @@ export default function AdminMessages() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load contact messages.', variant: 'destructive' })
+      try {
+        let query = supabase
+          .from('contact_messages')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (search.trim()) {
+          query = query.or(`name.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%,subject.ilike.%${search.trim()}%`)
+        }
+        if (activeGroup === 'unread') {
+          query = query.or('status.eq.new,status.is.null')
+        } else if (activeGroup === 'read') {
+          query = query.eq('status', 'resolved')
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: msgData, count: msgCount, error: msgErr } = await query.range(from, to)
+
+        if (msgErr) throw msgErr
+        setMessages(msgData || [])
+        setTotal(msgCount || 0)
+
+        // Count totals
+        const [{ count: unreadCount }, { count: totalMsgs }] = await Promise.all([
+          supabase.from('contact_messages').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
+          supabase.from('contact_messages').select('id', { count: 'exact', head: true }),
+        ])
+        setCounts({
+          all: totalMsgs || 0,
+          unread: unreadCount || 0,
+          read: Math.max(0, (totalMsgs || 0) - (unreadCount || 0)),
+        })
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to load contact messages.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }
@@ -85,24 +121,43 @@ export default function AdminMessages() {
   useEffect(() => { fetchMessages() }, [fetchMessages])
 
   const handleToggleStatus = async (msg: ContactMessageItem, targetStatus: 'read' | 'unread') => {
+    const updatedStatus = targetStatus === 'read' ? 'resolved' : 'new'
     try {
       await api.patch(`/admin/contact-messages/${msg.id}/status`, { status: targetStatus })
       toast({ title: targetStatus === 'read' ? 'Message marked as read' : 'Message marked as unread' })
-      const updatedStatus = targetStatus === 'read' ? 'resolved' : 'new'
       setMessages((prev) =>
         prev.map((m) => (m.id === msg.id ? { ...m, status: updatedStatus } : m))
       )
       if (selected && selected.id === msg.id) {
         setSelected({ ...selected, status: updatedStatus })
       }
-      // Refresh count totals
       setCounts((prev) => ({
         ...prev,
         unread: targetStatus === 'read' ? Math.max(0, prev.unread - 1) : prev.unread + 1,
         read: targetStatus === 'read' ? prev.read + 1 : Math.max(0, prev.read - 1),
       }))
-    } catch (err) {
-      toast({ title: 'Update failed', description: 'Could not update status.', variant: 'destructive' })
+    } catch {
+      try {
+        const { error } = await supabase
+          .from('contact_messages')
+          .update({ status: updatedStatus, updated_at: new Date().toISOString() })
+          .eq('id', msg.id)
+        if (error) throw error
+        toast({ title: targetStatus === 'read' ? 'Message marked as read' : 'Message marked as unread' })
+        setMessages((prev) =>
+          prev.map((m) => (m.id === msg.id ? { ...m, status: updatedStatus } : m))
+        )
+        if (selected && selected.id === msg.id) {
+          setSelected({ ...selected, status: updatedStatus })
+        }
+        setCounts((prev) => ({
+          ...prev,
+          unread: targetStatus === 'read' ? Math.max(0, prev.unread - 1) : prev.unread + 1,
+          read: targetStatus === 'read' ? prev.read + 1 : Math.max(0, prev.read - 1),
+        }))
+      } catch (fallbackErr) {
+        toast({ title: 'Update failed', description: 'Could not update status.', variant: 'destructive' })
+      }
     }
   }
 

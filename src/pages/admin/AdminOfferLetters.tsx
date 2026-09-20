@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
 interface OfferLetterItem {
@@ -83,7 +84,26 @@ export default function AdminOfferLetters() {
       setOfferLetters(list)
       setTotal(body?.pagination?.total ?? list.length)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load offer letters library.', variant: 'destructive' })
+      try {
+        let query = supabase
+          .from('offer_letters')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (debouncedSearch) {
+          query = query.or(`student_name.ilike.%${debouncedSearch}%,letter_id.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,domain.ilike.%${debouncedSearch}%`)
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: olData, count: olCount, error: olErr } = await query.range(from, to)
+
+        if (olErr) throw olErr
+        setOfferLetters(olData || [])
+        setTotal(olCount || 0)
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to load offer letters library.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }

@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate, cn } from '@/lib/utils'
 
 const PAGE_SIZE = 15
@@ -201,8 +202,49 @@ export default function AdminApplications() {
         : (typeof body?.total === 'number' ? body.total : (Array.isArray(body?.data) ? body.data.length : 0))
       setTotal(totalCount)
     } catch (err) {
-      console.error('Failed to load applications', err)
-      toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
+      console.warn('API error, falling back to direct Supabase query:', err)
+      try {
+        let query = supabase
+          .from('direct_applications')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (debouncedSearch) {
+          query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
+        }
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
+        }
+        if (dateFrom) {
+          query = query.gte('created_at', dateFrom)
+        }
+        if (dateTo) {
+          query = query.lte('created_at', dateTo)
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: directData, count: directCount, error: directError } = await query.range(from, to)
+
+        if (directError) throw directError
+
+        setApplications(directData || [])
+        setTotal(directCount || 0)
+
+        // Status counts fallback
+        const { data: allStatuses } = await supabase.from('direct_applications').select('status')
+        if (allStatuses) {
+          const counts: Record<string, number> = { all: allStatuses.length }
+          allStatuses.forEach((r) => {
+            const s = r.status || 'pending'
+            counts[s] = (counts[s] || 0) + 1
+          })
+          setStatusCounts((prev) => ({ ...prev, ...counts }))
+        }
+      } catch (fallbackErr) {
+        console.error('Failed to load applications via fallback', fallbackErr)
+        toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
       setIsFetching(false)
@@ -218,13 +260,20 @@ export default function AdminApplications() {
     setUpdatingStatusId(id)
     try {
       await api.patch(`/admin/applications/${id}/status`, { status })
-      toast({ title: 'Status updated successfully!' })
-      setApplications((prev) =>
-        prev.map((a) => (a.id === id ? { ...a, status } : a))
-      )
-    } catch (err) {
-      console.error('Status update failed', err)
-      toast({ title: 'Update Failed', description: 'Could not update status.', variant: 'destructive' })
+      toast({ title: 'Status updated', description: `Application status set to ${status}.` })
+      fetchApplications()
+    } catch {
+      try {
+        const { error } = await supabase
+          .from('direct_applications')
+          .update({ status, updated_at: new Date().toISOString() })
+          .eq('id', id)
+        if (error) throw error
+        toast({ title: 'Status updated', description: `Application status set to ${status}.` })
+        fetchApplications()
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' })
+      }
     } finally {
       setUpdatingStatusId(null)
     }

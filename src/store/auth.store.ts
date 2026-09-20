@@ -24,9 +24,9 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       profile: null,
-      isLoading: false,
-      isAdmin: true,
-      isInitialized: true,
+      isLoading: true,
+      isAdmin: false,
+      isInitialized: false,
 
       setUser: (user) => set({ user }),
       setProfile: (profile) => set({ profile }),
@@ -38,15 +38,27 @@ export const useAuthStore = create<AuthState>()(
 
       initialize: async () => {
         try {
-          // Restore session on load
           const { data: { session } } = await supabase.auth.getSession()
           if (session?.user) {
-            const isAdmin = session.user.user_metadata?.role === 'admin' ||
-                            session.user.app_metadata?.role === 'admin'
+            let isAdmin = session.user.user_metadata?.role === 'admin' ||
+                          session.user.app_metadata?.role === 'admin'
+            if (!isAdmin) {
+              const { data: profile } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', session.user.id)
+                .single()
+              if (profile?.role === 'admin') {
+                isAdmin = true
+              }
+            }
             set({ user: session.user, isAdmin })
+          } else {
+            set({ user: null, profile: null, isAdmin: false })
           }
         } catch (err) {
           console.warn('Supabase getSession warning:', err)
+          set({ user: null, profile: null, isAdmin: false })
         } finally {
           set({ isLoading: false, isInitialized: true })
         }
@@ -55,11 +67,21 @@ export const useAuthStore = create<AuthState>()(
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
           async (event, session) => {
             if (session?.user) {
-              const isAdmin = session.user.user_metadata?.role === 'admin' ||
-                              session.user.app_metadata?.role === 'admin'
-              set({ user: session.user, isAdmin })
+              let isAdmin = session.user.user_metadata?.role === 'admin' ||
+                            session.user.app_metadata?.role === 'admin'
+              if (!isAdmin) {
+                const { data: profile } = await supabase
+                  .from('profiles')
+                  .select('role')
+                  .eq('id', session.user.id)
+                  .single()
+                if (profile?.role === 'admin') {
+                  isAdmin = true
+                }
+              }
+              set({ user: session.user, isAdmin, isInitialized: true })
             } else {
-              set({ user: null, profile: null, isAdmin: true })
+              set({ user: null, profile: null, isAdmin: false, isInitialized: true })
             }
           }
         )

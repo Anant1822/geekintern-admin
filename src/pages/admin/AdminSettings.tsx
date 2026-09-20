@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import type { FAQ, Testimonial } from '@/types'
 
 // ── Settings schema ────────────────────────────────────────────────────────
@@ -118,7 +119,16 @@ export default function AdminSettings() {
       const res = await api.get('/admin/accounts')
       setAdminAccounts(res.data?.data || [])
     } catch {
-      // Fallback
+      try {
+        const { data: adminProfiles } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, role, created_at')
+          .eq('role', 'admin')
+          .order('created_at', { ascending: false })
+        setAdminAccounts(adminProfiles || [])
+      } catch {
+        // Fallback
+      }
     } finally {
       setLoadingAdmins(false)
     }

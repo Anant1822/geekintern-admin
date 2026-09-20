@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
 import api from '@/services/api'
+import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 
 interface CollegeInquiryItem {
@@ -69,7 +70,29 @@ export default function AdminInquiries() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      toast({ title: 'Error', description: 'Failed to load college inquiries.', variant: 'destructive' })
+      try {
+        let query = supabase
+          .from('college_inquiries')
+          .select('*', { count: 'exact' })
+          .order('created_at', { ascending: false })
+
+        if (search.trim()) {
+          query = query.or(`college_name.ilike.%${search.trim()}%,contact_person.ilike.%${search.trim()}%,email.ilike.%${search.trim()}%`)
+        }
+        if (statusFilter !== 'all') {
+          query = query.eq('status', statusFilter)
+        }
+
+        const from = (page - 1) * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+        const { data: inqData, count: inqCount, error: inqErr } = await query.range(from, to)
+
+        if (inqErr) throw inqErr
+        setInquiries(inqData || [])
+        setTotal(inqCount || 0)
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to load college inquiries.', variant: 'destructive' })
+      }
     } finally {
       setLoading(false)
     }
@@ -87,7 +110,22 @@ export default function AdminInquiries() {
         setSelected({ ...selected, status: newStatus })
       }
     } catch {
-      toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' })
+      try {
+        const { error } = await supabase
+          .from('college_inquiries')
+          .update({ status: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', id)
+        if (error) throw error
+        toast({ title: 'Status updated', description: `Inquiry marked as ${newStatus}` })
+        setInquiries((prev) =>
+          prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
+        )
+        if (selected && selected.id === id) {
+          setSelected({ ...selected, status: newStatus })
+        }
+      } catch (fallbackErr) {
+        toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' })
+      }
     } finally {
       setUpdatingId(null)
     }
