@@ -375,11 +375,40 @@ export default function AdminSettings() {
                         setNewAdminPassword('')
                         loadAdminAccounts()
                       } catch (err: any) {
-                        toast({
-                          title: 'Failed to create admin',
-                          description: err?.response?.data?.message || err?.message || 'Error occurred',
-                          variant: 'destructive',
-                        })
+                        try {
+                          const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+                            email: newAdminEmail.trim(),
+                            password: newAdminPassword.trim(),
+                            options: {
+                              data: {
+                                full_name: newAdminName.trim() || 'Administrator',
+                                role: 'admin',
+                              },
+                            },
+                          })
+                          if (signUpErr) throw signUpErr
+                          if (signUpData.user) {
+                            await supabase.from('profiles').upsert({
+                              id: signUpData.user.id,
+                              email: newAdminEmail.trim(),
+                              full_name: newAdminName.trim() || 'Administrator',
+                              role: 'admin',
+                              is_email_verified: true,
+                              updated_at: new Date().toISOString(),
+                            })
+                          }
+                          toast({ title: 'Admin account created successfully!' })
+                          setNewAdminName('')
+                          setNewAdminEmail('')
+                          setNewAdminPassword('')
+                          loadAdminAccounts()
+                        } catch (fallbackErr: any) {
+                          toast({
+                            title: 'Failed to create admin',
+                            description: fallbackErr?.message || err?.response?.data?.message || err?.message || 'Error occurred',
+                            variant: 'destructive',
+                          })
+                        }
                       } finally {
                         setCreatingAdmin(false)
                       }
@@ -796,11 +825,43 @@ export default function AdminSettings() {
                 setEditingAdmin(null)
                 loadAdminAccounts()
               } catch (err: any) {
-                toast({
-                  title: 'Failed to update credentials',
-                  description: err?.response?.data?.message || err?.message || 'Error occurred',
-                  variant: 'destructive',
-                })
+                // Direct Supabase fallback when Node backend is not hosted
+                try {
+                  const updates: { full_name?: string; email?: string } = {}
+                  if (editAdminName.trim()) updates.full_name = editAdminName.trim()
+                  if (editAdminEmail.trim()) updates.email = editAdminEmail.trim()
+
+                  // 1. Update public.profiles
+                  const { error: profErr } = await supabase
+                    .from('profiles')
+                    .update(updates)
+                    .eq('id', editingAdmin.id)
+
+                  if (profErr) throw profErr
+
+                  // 2. If updating current logged-in user, also update Supabase Auth attributes & password
+                  const { data: { user: currentUser } } = await supabase.auth.getUser()
+                  if (currentUser && currentUser.id === editingAdmin.id) {
+                    const authAttr: { password?: string; data?: { full_name: string } } = {}
+                    if (editAdminPassword.trim()) authAttr.password = editAdminPassword.trim()
+                    if (editAdminName.trim()) authAttr.data = { full_name: editAdminName.trim() }
+
+                    if (Object.keys(authAttr).length > 0) {
+                      const { error: authErr } = await supabase.auth.updateUser(authAttr)
+                      if (authErr) throw authErr
+                    }
+                  }
+
+                  toast({ title: 'Admin credentials updated successfully!' })
+                  setEditingAdmin(null)
+                  loadAdminAccounts()
+                } catch (fallbackErr: any) {
+                  toast({
+                    title: 'Failed to update credentials',
+                    description: fallbackErr?.message || err?.response?.data?.message || err?.message || 'Error occurred',
+                    variant: 'destructive',
+                  })
+                }
               } finally {
                 setSavingAdminEdit(false)
               }
