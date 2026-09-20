@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 56" fill="none" role="img" aria-label="Geek Intern logo">
+  <defs>
+    <linearGradient id="cf_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="50%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+  </defs>
+  <!-- Icon: Rounded gradient square with code brackets -->
+  <rect x="4" y="6" width="44" height="44" rx="12" fill="url(#cf_grad)"/>
+  <polyline points="20 34 14 28 20 22" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="32 22 38 28 32 34" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Wordmark -->
+  <text x="60" y="31" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="800" fill="#0F172A" letter-spacing="-0.5">Geek<tspan fill="#2563EB">Intern</tspan></text>
+  <!-- Tagline -->
+  <text x="60" y="44" font-family="Inter, -apple-system, sans-serif" font-size="9" font-weight="700" fill="#0D9488" letter-spacing="1.5">VIRTUAL INTERNSHIPS</text>
+</svg>
