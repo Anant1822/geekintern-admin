@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff, UserPlus, Shield, KeyRound, Check, RefreshCw } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff, UserPlus, Shield, KeyRound, Check, RefreshCw, UserX, AlertTriangle } from 'lucide-react'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import LoadingPage from '@/components/common/LoadingPage'
 import { Button } from '@/components/ui/button'
@@ -84,7 +84,7 @@ function SettingsSection({
 // ── Component ──────────────────────────────────────────────────────────────
 export default function AdminSettings() {
   const navigate = useNavigate()
-  const { isAdmin, isInitialized } = useAuth()
+  const { user, isAdmin, isInitialized } = useAuth()
   const { toast } = useToast()
 
   const [settings, setSettings] = useState<Settings>({})
@@ -112,6 +112,42 @@ export default function AdminSettings() {
   const [editAdminPassword, setEditAdminPassword] = useState('')
   const [savingAdminEdit, setSavingAdminEdit] = useState(false)
   const [showEditPassword, setShowEditPassword] = useState(false)
+
+  // Revoke admin accessibility dialog
+  const [revokeAdminTarget, setRevokeAdminTarget] = useState<any | null>(null)
+  const [revokingAdmin, setRevokingAdmin] = useState(false)
+
+  const handleRevokeAdmin = async (admin: any) => {
+    setRevokingAdmin(true)
+    try {
+      // 1. Try backend endpoint
+      try {
+        await api.patch(`/admin/accounts/${admin.id}`, { role: 'student' }, { timeout: 3000 })
+      } catch {}
+
+      // 2. Direct Supabase Database update
+      const { error: profErr } = await supabase
+        .from('profiles')
+        .update({ role: 'student', updated_at: new Date().toISOString() })
+        .eq('id', admin.id)
+
+      if (profErr) throw profErr
+
+      // 3. Update local state immediately
+      setAdminAccounts((prev) => prev.filter((a) => a.id !== admin.id))
+      toast({ title: 'Admin access revoked', description: `${admin.full_name || admin.email} is no longer an administrator.` })
+      setRevokeAdminTarget(null)
+      loadAdminAccounts()
+    } catch (err: any) {
+      toast({
+        title: 'Failed to revoke admin access',
+        description: err?.message || 'Error occurred',
+        variant: 'destructive',
+      })
+    } finally {
+      setRevokingAdmin(false)
+    }
+  }
 
   const loadAdminAccounts = async () => {
     setLoadingAdmins(true)
@@ -520,21 +556,40 @@ export default function AdminSettings() {
                             </div>
                           </div>
 
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              setEditingAdmin(admin)
-                              setEditAdminName(admin.full_name || '')
-                              setEditAdminEmail(admin.email || '')
-                              setEditAdminPassword('')
-                              setShowEditPassword(false)
-                            }}
-                            className="text-xs font-semibold border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-blue-600 gap-1.5 shrink-0"
-                          >
-                            <KeyRound className="h-3.5 w-3.5" />
-                            Change Username / Password
-                          </Button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingAdmin(admin)
+                                setEditAdminName(admin.full_name || '')
+                                setEditAdminEmail(admin.email || '')
+                                setEditAdminPassword('')
+                                setShowEditPassword(false)
+                              }}
+                              className="text-xs font-semibold border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-blue-600 gap-1.5"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                              Change Username / Password
+                            </Button>
+
+                            {/* Revoke accessibility option */}
+                            {user?.id !== admin.id ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setRevokeAdminTarget(admin)}
+                                className="text-xs font-semibold border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 gap-1.5"
+                              >
+                                <UserX className="h-3.5 w-3.5 text-rose-500" />
+                                Revoke Access
+                              </Button>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200">
+                                You
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -964,6 +1019,56 @@ export default function AdminSettings() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revoke Admin Access Confirmation Dialog */}
+      <Dialog open={!!revokeAdminTarget} onOpenChange={(open) => !open && setRevokeAdminTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <AlertTriangle className="h-5 w-5" />
+              Revoke Administrator Access
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm text-slate-600">
+            <p>
+              Are you sure you want to remove administrator privileges for{' '}
+              <strong className="text-slate-900 font-semibold">{revokeAdminTarget?.full_name || revokeAdminTarget?.email}</strong>?
+            </p>
+            <div className="rounded-lg bg-rose-50 border border-rose-100 p-3 text-xs text-rose-800 space-y-1">
+              <p className="font-semibold">What will happen:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-rose-700">
+                <li>Their role will immediately revert to student.</li>
+                <li>They will lose all access to the admin dashboard and student records.</li>
+                <li>They cannot log into this administration portal.</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRevokeAdminTarget(null)}
+              disabled={revokingAdmin}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={revokingAdmin}
+              onClick={() => revokeAdminTarget && handleRevokeAdmin(revokeAdminTarget)}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+            >
+              {revokingAdmin ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Revoking Access...
+                </span>
+              ) : (
+                'Yes, Revoke Access'
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AdminLayout>

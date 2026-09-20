@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert } from '@/components/ui/alert'
 import { useAuth } from '@/hooks/useAuth'
 import { authService } from '@/services/auth'
+import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
 
 // ── Schema ─────────────────────────────────────────────────────────────────
@@ -39,9 +40,20 @@ export default function AdminLogin() {
     try {
       await signIn(data.email, data.password)
 
-      // Check role from fresh session
+      // Check role from fresh session and profiles table
       const { data: { user } } = await authService.getUser()
-      const role = user?.user_metadata?.role ?? user?.app_metadata?.role
+      let role = user?.user_metadata?.role ?? user?.app_metadata?.role
+
+      if (role !== 'admin' && user?.id) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        if (prof?.role === 'admin') {
+          role = 'admin'
+        }
+      }
 
       if (role !== 'admin') {
         await signOut()
