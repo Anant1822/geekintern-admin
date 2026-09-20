@@ -1456,57 +1456,6 @@ export function Home() {
         </div>
       </section>
 
-      {/* ========================================================= */}
-      {/* 8. STUDENT REVIEWS (Updated Quotes as Requested) */}
-      {/* ========================================================= */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-slate-50 text-slate-900 border-y border-slate-200/80">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-3xl mx-auto mb-14">
-            <Badge className="bg-yellow-50 text-yellow-700 border border-yellow-200 uppercase tracking-widest text-[11px] mb-3 px-3 py-1">
-              Student Voices
-            </Badge>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-950">
-              Loved by Learners <span className="text-blue-600">Across India</span>
-            </h2>
-            <p className="text-slate-600 text-sm sm:text-base mt-2">
-              Discover how Geek Intern verified virtual internships helped students bridge theory and land software roles.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {STUDENT_TESTIMONIALS.map((t, idx) => (
-              <div
-                key={idx}
-                className="rounded-2xl bg-white border border-slate-200 p-6 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div>
-                  <div className="flex items-center gap-1 mb-4">
-                    {Array.from({ length: t.rating }).map((_, rIdx) => (
-                      <Star key={rIdx} className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-xs sm:text-sm text-slate-700 leading-relaxed italic mb-6">
-                    "{t.quote}"
-                  </p>
-                </div>
-                <div className="pt-4 border-t border-slate-100">
-                  <div className="font-bold text-sm text-slate-900">{t.name}</div>
-                  <div className="text-xs text-blue-600 font-medium">{t.domain}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">{t.college}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-center mt-10">
-            <Link to="/student-reviews">
-              <Button variant="outline" className="border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs shadow-sm">
-                View All Student Reviews →
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </section>
 
       {/* ========================================================= */}
       {/* 9. FREQUENTLY ASKED QUESTIONS */}
