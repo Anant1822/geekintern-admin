@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff, UserPlus, Shield, KeyRound, Check, RefreshCw } from 'lucide-react'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import LoadingPage from '@/components/common/LoadingPage'
 import { Button } from '@/components/ui/button'
@@ -93,12 +93,37 @@ export default function AdminSettings() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([])
   const [loadingTestimonials, setLoadingTestimonials] = useState(true)
 
-  // FAQ dialog
-  const [faqDialog, setFaqDialog] = useState<{ open: boolean; editing: FAQ | null }>({ open: false, editing: null })
+  // Admin Accounts management state
+  const [adminAccounts, setAdminAccounts] = useState<any[]>([])
+  const [loadingAdmins, setLoadingAdmins] = useState(false)
+  const [newAdminEmail, setNewAdminEmail] = useState('')
+  const [newAdminPassword, setNewAdminPassword] = useState('')
+  const [newAdminName, setNewAdminName] = useState('')
+  const [creatingAdmin, setCreatingAdmin] = useState(false)
+
+  // Edit admin dialog
+  const [editingAdmin, setEditingAdmin] = useState<any | null>(null)
+  const [editAdminName, setEditAdminName] = useState('')
+  const [editAdminEmail, setEditAdminEmail] = useState('')
+  const [editAdminPassword, setEditAdminPassword] = useState('')
+  const [savingAdminEdit, setSavingAdminEdit] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
+
+  const loadAdminAccounts = async () => {
+    setLoadingAdmins(true)
+    try {
+      const res = await api.get('/admin/accounts')
+      setAdminAccounts(res.data?.data || [])
+    } catch {
+      // Fallback
+    } finally {
+      setLoadingAdmins(false)
+    }
+  }
 
   useEffect(() => {
-    // Admin settings accessible
-  }, [navigate])
+    loadAdminAccounts()
+  }, [])
 
   // Settings forms
   const platformForm = useForm<PlatformForm>({
@@ -287,13 +312,195 @@ export default function AdminSettings() {
           <p className="text-sm text-muted-foreground mt-0.5">Configure platform-wide settings</p>
         </div>
 
-        <Tabs defaultValue="general">
+        <Tabs defaultValue="admins">
           <TabsList className="mb-6">
+            <TabsTrigger value="admins" className="gap-1.5 font-semibold">
+              <Shield className="h-4 w-4 text-blue-600" /> Admin Accounts
+            </TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="fees">Fees</TabsTrigger>
             <TabsTrigger value="forms">Forms & WhatsApp</TabsTrigger>
             <TabsTrigger value="content">Content</TabsTrigger>
           </TabsList>
+
+          {/* Admin Accounts & Credentials */}
+          <TabsContent value="admins">
+            <div className="space-y-6">
+              {/* Create New Admin Account */}
+              <Card className="border border-slate-200 shadow-sm bg-white">
+                <CardHeader className="border-b pb-4 bg-slate-50/50">
+                  <div className="flex items-center gap-2">
+                    <UserPlus className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <CardTitle className="text-base font-semibold text-slate-900">Create New Administrator</CardTitle>
+                      <CardDescription className="text-xs">Add new admin accounts with complete access to manage Geek Intern</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault()
+                      if (!newAdminEmail.trim() || !newAdminPassword.trim()) {
+                        toast({ title: 'Email and password required', variant: 'destructive' })
+                        return
+                      }
+                      if (newAdminPassword.length < 6) {
+                        toast({ title: 'Password must be at least 6 characters', variant: 'destructive' })
+                        return
+                      }
+                      setCreatingAdmin(true)
+                      try {
+                        await api.post('/admin/accounts', {
+                          full_name: newAdminName.trim() || 'Administrator',
+                          email: newAdminEmail.trim(),
+                          password: newAdminPassword.trim(),
+                        })
+                        toast({ title: 'Admin account created successfully!' })
+                        setNewAdminName('')
+                        setNewAdminEmail('')
+                        setNewAdminPassword('')
+                        loadAdminAccounts()
+                      } catch (err: any) {
+                        toast({
+                          title: 'Failed to create admin',
+                          description: err?.response?.data?.message || err?.message || 'Error occurred',
+                          variant: 'destructive',
+                        })
+                      } finally {
+                        setCreatingAdmin(false)
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="new_admin_name" className="text-xs font-semibold text-slate-700">Admin Name / Username</Label>
+                        <Input
+                          id="new_admin_name"
+                          placeholder="e.g. John Doe"
+                          value={newAdminName}
+                          onChange={(e) => setNewAdminName(e.target.value)}
+                          className="mt-1.5 h-10 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="new_admin_email" className="text-xs font-semibold text-slate-700">Email Address *</Label>
+                        <Input
+                          id="new_admin_email"
+                          type="email"
+                          placeholder="e.g. admin2@geekintern.com"
+                          value={newAdminEmail}
+                          onChange={(e) => setNewAdminEmail(e.target.value)}
+                          required
+                          className="mt-1.5 h-10 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="new_admin_password" className="text-xs font-semibold text-slate-700">Password *</Label>
+                        <Input
+                          id="new_admin_password"
+                          type="text"
+                          placeholder="Min. 6 characters"
+                          value={newAdminPassword}
+                          onChange={(e) => setNewAdminPassword(e.target.value)}
+                          required
+                          className="mt-1.5 h-10 text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        type="submit"
+                        disabled={creatingAdmin || !newAdminEmail.trim() || !newAdminPassword.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 h-10"
+                      >
+                        {creatingAdmin ? (
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" /> Creating Account...
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <Plus className="h-4 w-4" /> Add Admin Account
+                          </span>
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+
+              {/* Existing Admin Accounts List & Modify Credentials */}
+              <Card className="border border-slate-200 shadow-sm bg-white">
+                <CardHeader className="border-b pb-4 bg-slate-50/50 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-emerald-600" />
+                    <div>
+                      <CardTitle className="text-base font-semibold text-slate-900">Current Administrator Accounts</CardTitle>
+                      <CardDescription className="text-xs">Manage usernames, change emails, and update passwords</CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadAdminAccounts}
+                    disabled={loadingAdmins}
+                    className="h-8 text-xs border-slate-200 text-slate-600 gap-1"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingAdmins ? 'animate-spin' : ''}`} /> Refresh
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {loadingAdmins ? (
+                    <div className="p-6 space-y-3">
+                      <Skeleton className="h-12 w-full" />
+                      <Skeleton className="h-12 w-full" />
+                    </div>
+                  ) : adminAccounts.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-slate-500">
+                      No admin accounts found.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {adminAccounts.map((admin) => (
+                        <div key={admin.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-slate-900">{admin.full_name || 'Administrator'}</span>
+                              <Badge className="bg-blue-100 text-blue-800 text-[10px] font-semibold border-0">
+                                Admin
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-slate-500 flex items-center gap-2">
+                              <span>Email: <strong className="text-slate-700 font-mono">{admin.email}</strong></span>
+                              <span>•</span>
+                              <span>Added: {new Date(admin.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingAdmin(admin)
+                              setEditAdminName(admin.full_name || '')
+                              setEditAdminEmail(admin.email || '')
+                              setEditAdminPassword('')
+                              setShowEditPassword(false)
+                            }}
+                            className="text-xs font-semibold border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-blue-600 gap-1.5 shrink-0"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Change Username / Password
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           {/* General */}
           <TabsContent value="general">
@@ -541,6 +748,121 @@ export default function AdminSettings() {
               <Button type="submit" disabled={savingFaq} className="bg-brand-navy hover:bg-brand-navy/90 text-white">
                 {savingFaq && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {faqDialog.editing ? 'Update FAQ' : 'Create FAQ'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Admin Account Dialog */}
+      <Dialog open={!!editingAdmin} onOpenChange={(open) => !open && setEditingAdmin(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-blue-600" />
+              Change Admin Credentials
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!editingAdmin) return
+              if (editAdminPassword && editAdminPassword.length < 6) {
+                toast({ title: 'Password must be at least 6 characters', variant: 'destructive' })
+                return
+              }
+
+              setSavingAdminEdit(true)
+              try {
+                await api.patch(`/admin/accounts/${editingAdmin.id}`, {
+                  full_name: editAdminName.trim(),
+                  email: editAdminEmail.trim(),
+                  password: editAdminPassword.trim() || undefined,
+                })
+                toast({ title: 'Admin credentials updated successfully!' })
+                setEditingAdmin(null)
+                loadAdminAccounts()
+              } catch (err: any) {
+                toast({
+                  title: 'Failed to update credentials',
+                  description: err?.response?.data?.message || err?.message || 'Error occurred',
+                  variant: 'destructive',
+                })
+              } finally {
+                setSavingAdminEdit(false)
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <Label htmlFor="edit_admin_name" className="text-xs font-semibold text-slate-700">
+                Admin Name / Username
+              </Label>
+              <Input
+                id="edit_admin_name"
+                value={editAdminName}
+                onChange={(e) => setEditAdminName(e.target.value)}
+                className="mt-1.5 h-10 text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit_admin_email" className="text-xs font-semibold text-slate-700">
+                Email Address (Login Username)
+              </Label>
+              <Input
+                id="edit_admin_email"
+                type="email"
+                value={editAdminEmail}
+                onChange={(e) => setEditAdminEmail(e.target.value)}
+                className="mt-1.5 h-10 text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit_admin_password" className="text-xs font-semibold text-slate-700">
+                  New Password
+                </Label>
+                <span className="text-[11px] text-slate-400">Leave blank to keep current</span>
+              </div>
+              <div className="relative mt-1.5">
+                <Input
+                  id="edit_admin_password"
+                  type={showEditPassword ? 'text' : 'password'}
+                  placeholder="Enter new password (min. 6 chars)"
+                  value={editAdminPassword}
+                  onChange={(e) => setEditAdminPassword(e.target.value)}
+                  className="h-10 text-sm pr-10 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showEditPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setEditingAdmin(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={savingAdminEdit}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                {savingAdminEdit ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving...
+                  </span>
+                ) : (
+                  'Save Credentials'
+                )}
               </Button>
             </DialogFooter>
           </form>
