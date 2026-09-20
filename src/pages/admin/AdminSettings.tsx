@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff, UserPlus, Shield, KeyRound, Check, RefreshCw, UserX, AlertTriangle } from 'lucide-react'
+import { Save, Loader2, Plus, Trash2, Pencil, Eye, EyeOff, UserPlus, Shield, KeyRound, Check, RefreshCw, UserX, AlertTriangle, Mail, CheckCircle2, User, Copy } from 'lucide-react'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import LoadingPage from '@/components/common/LoadingPage'
 import { Button } from '@/components/ui/button'
@@ -149,32 +149,49 @@ export default function AdminSettings() {
     }
   }
 
+  // State for copying email
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedEmail(text)
+    setTimeout(() => setCopiedEmail(null), 2000)
+  }
+
   const loadAdminAccounts = async () => {
     setLoadingAdmins(true)
     try {
-      if (!isBackendAvailable) {
-        const { data: adminProfiles } = await supabase
-          .from('profiles')
-          .select('id, email, full_name, role, created_at')
-          .eq('role', 'admin')
-          .order('created_at', { ascending: false })
-        setAdminAccounts(adminProfiles || [])
+      // First attempt: Backend endpoint
+      const res = await api.get('/admin/accounts', { timeout: 4000 })
+      if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        setAdminAccounts(res.data.data)
         return
       }
+    } catch (e) {
+      console.warn('Backend /admin/accounts unavailable or timed out, loading from Supabase directly:', e)
+    }
 
-      const res = await api.get('/admin/accounts')
-      setAdminAccounts(res.data?.data || [])
-    } catch {
-      try {
-        const { data: adminProfiles } = await supabase
+    try {
+      // Fallback: Direct Supabase profiles query
+      const { data: adminProfiles, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, created_at, updated_at')
+        .eq('role', 'admin')
+        .order('created_at', { ascending: true })
+
+      if (!error && adminProfiles && adminProfiles.length > 0) {
+        setAdminAccounts(adminProfiles)
+      } else {
+        // Fallback: try querying without role filter if RLS restricts
+        const { data: allProfiles } = await supabase
           .from('profiles')
-          .select('id, email, full_name, role, created_at')
-          .eq('role', 'admin')
-          .order('created_at', { ascending: false })
-        setAdminAccounts(adminProfiles || [])
-      } catch {
-        // Fallback
+          .select('id, email, full_name, role, created_at, updated_at')
+          .order('created_at', { ascending: true })
+        const filtered = (allProfiles || []).filter((p: any) => p.role === 'admin')
+        setAdminAccounts(filtered)
       }
+    } catch (err) {
+      console.error('Error loading admin accounts:', err)
     } finally {
       setLoadingAdmins(false)
     }
@@ -519,13 +536,22 @@ export default function AdminSettings() {
               </Card>
 
               {/* Existing Admin Accounts List & Modify Credentials */}
-              <Card className="border border-slate-200 shadow-sm bg-white">
-                <CardHeader className="border-b pb-4 bg-slate-50/50 flex flex-row items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-emerald-600" />
+              <Card className="border border-slate-200 shadow-sm bg-white overflow-hidden">
+                <CardHeader className="border-b pb-4 bg-slate-50/70 flex flex-row items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700">
+                      <Shield className="h-5 w-5" />
+                    </div>
                     <div>
-                      <CardTitle className="text-base font-semibold text-slate-900">Current Administrator Accounts</CardTitle>
-                      <CardDescription className="text-xs">Manage usernames, change emails, and update passwords</CardDescription>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-bold text-slate-900">Current Administrator Accounts</CardTitle>
+                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs font-semibold px-2 py-0.5">
+                          {adminAccounts.length} Active {adminAccounts.length === 1 ? 'Admin' : 'Admins'}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs text-slate-500">
+                        Active administrative credentials, login emails, access levels, and account management
+                      </CardDescription>
                     </div>
                   </div>
                   <Button
@@ -533,75 +559,154 @@ export default function AdminSettings() {
                     size="sm"
                     onClick={loadAdminAccounts}
                     disabled={loadingAdmins}
-                    className="h-8 text-xs border-slate-200 text-slate-600 gap-1"
+                    className="h-8 text-xs border-slate-200 text-slate-600 gap-1.5 hover:bg-slate-100 shadow-xs"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${loadingAdmins ? 'animate-spin' : ''}`} /> Refresh
+                    <RefreshCw className={`h-3.5 w-3.5 ${loadingAdmins ? 'animate-spin text-blue-600' : ''}`} /> Refresh
                   </Button>
                 </CardHeader>
-                <CardContent className="p-0">
+                <CardContent className="p-4 sm:p-6 bg-slate-50/30">
                   {loadingAdmins ? (
-                    <div className="p-6 space-y-3">
-                      <Skeleton className="h-12 w-full" />
-                      <Skeleton className="h-12 w-full" />
+                    <div className="space-y-3">
+                      <Skeleton className="h-20 w-full rounded-xl" />
+                      <Skeleton className="h-20 w-full rounded-xl" />
                     </div>
                   ) : adminAccounts.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-slate-500">
-                      No admin accounts found.
+                    <div className="p-10 text-center rounded-xl border border-dashed border-slate-200 bg-white space-y-2">
+                      <Shield className="h-8 w-8 text-slate-300 mx-auto" />
+                      <p className="text-sm font-medium text-slate-700">No administrator accounts found</p>
+                      <p className="text-xs text-slate-400">Click the refresh button above or add a new admin account.</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-slate-100">
-                      {adminAccounts.map((admin) => (
-                        <div key={admin.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50/70 transition-colors">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-slate-900">{admin.full_name || 'Administrator'}</span>
-                              <Badge className="bg-blue-100 text-blue-800 text-[10px] font-semibold border-0">
-                                Admin
-                              </Badge>
-                            </div>
-                            <div className="text-xs text-slate-500 flex items-center gap-2">
-                              <span>Email: <strong className="text-slate-700 font-mono">{admin.email}</strong></span>
-                              <span>•</span>
-                              <span>Added: {new Date(admin.created_at).toLocaleDateString()}</span>
+                    <div className="grid grid-cols-1 gap-4">
+                      {adminAccounts.map((admin) => {
+                        const isSuperAdmin = admin.email === 'anantmaxx@gmail.com' || (admin.full_name && admin.full_name.toLowerCase().includes('super'))
+                        const isCurrentUser = user?.id === admin.id || user?.email?.toLowerCase() === admin.email?.toLowerCase()
+
+                        return (
+                          <div
+                            key={admin.id}
+                            className={`p-4 sm:p-5 rounded-xl border transition-all duration-150 bg-white ${
+                              isCurrentUser
+                                ? 'border-blue-200 ring-1 ring-blue-100 shadow-xs'
+                                : 'border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-sm'
+                            }`}
+                          >
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                              {/* Left: Admin Details */}
+                              <div className="flex items-start gap-3.5">
+                                <div className={`h-11 w-11 rounded-full flex items-center justify-center font-bold text-sm shrink-0 border ${
+                                  isSuperAdmin
+                                    ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                                }`}>
+                                  {admin.full_name ? admin.full_name.charAt(0).toUpperCase() : 'A'}
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-bold text-sm sm:text-base text-slate-900">
+                                      {admin.full_name || 'Administrator'}
+                                    </span>
+
+                                    {/* Role Badge */}
+                                    {isSuperAdmin ? (
+                                      <Badge className="bg-amber-100 hover:bg-amber-100 text-amber-800 text-[11px] font-bold border-0 px-2 py-0.5">
+                                        Super Admin
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-blue-100 hover:bg-blue-100 text-blue-800 text-[11px] font-bold border-0 px-2 py-0.5">
+                                        Admin
+                                      </Badge>
+                                    )}
+
+                                    {/* Active Status Badge */}
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      Active
+                                    </span>
+
+                                    {/* Current session badge */}
+                                    {isCurrentUser && (
+                                      <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-semibold">
+                                        You (Current Session)
+                                      </Badge>
+                                    )}
+                                  </div>
+
+                                  {/* Credential Data: Login Email & Metadata */}
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 pt-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-slate-400 font-medium">Login Email:</span>
+                                      <code className="font-mono text-slate-800 font-semibold bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 select-all">
+                                        {admin.email}
+                                      </code>
+                                      <button
+                                        type="button"
+                                        title="Copy login email"
+                                        onClick={() => copyToClipboard(admin.email)}
+                                        className="text-slate-400 hover:text-slate-700 p-0.5 transition-colors"
+                                      >
+                                        {copiedEmail === admin.email ? (
+                                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                        ) : (
+                                          <Copy className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-1 text-slate-400">
+                                      <span>•</span>
+                                      <span>ID: <span className="font-mono text-slate-500">{admin.id?.slice(0, 8)}...</span></span>
+                                      {admin.created_at && (
+                                        <>
+                                          <span>•</span>
+                                          <span>Created: {new Date(admin.created_at).toLocaleDateString()}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right: Actions */}
+                              <div className="flex items-center gap-2 pt-2 lg:pt-0 shrink-0 border-t lg:border-t-0 border-slate-100">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setEditingAdmin(admin)
+                                    setEditAdminName(admin.full_name || '')
+                                    setEditAdminEmail(admin.email || '')
+                                    setEditAdminPassword('')
+                                    setShowEditPassword(false)
+                                  }}
+                                  className="text-xs font-semibold border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-blue-600 gap-1.5 h-9"
+                                >
+                                  <KeyRound className="h-3.5 w-3.5 text-slate-500" />
+                                  Edit Credentials
+                                </Button>
+
+                                {/* Revoke accessibility option */}
+                                {!isCurrentUser ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setRevokeAdminTarget(admin)}
+                                    className="text-xs font-semibold border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 gap-1.5 h-9"
+                                  >
+                                    <UserX className="h-3.5 w-3.5 text-rose-500" />
+                                    Revoke Access
+                                  </Button>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 italic px-2">
+                                    Primary Admin
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setEditingAdmin(admin)
-                                setEditAdminName(admin.full_name || '')
-                                setEditAdminEmail(admin.email || '')
-                                setEditAdminPassword('')
-                                setShowEditPassword(false)
-                              }}
-                              className="text-xs font-semibold border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-blue-600 gap-1.5"
-                            >
-                              <KeyRound className="h-3.5 w-3.5" />
-                              Change Username / Password
-                            </Button>
-
-                            {/* Revoke accessibility option */}
-                            {user?.id !== admin.id ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setRevokeAdminTarget(admin)}
-                                className="text-xs font-semibold border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 gap-1.5"
-                              >
-                                <UserX className="h-3.5 w-3.5 text-rose-500" />
-                                Revoke Access
-                              </Button>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200">
-                                You
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </CardContent>
