@@ -33,8 +33,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api, { isBackendAvailable } from '@/services/api'
-import { supabase } from '@/lib/supabase'
+import api from '@/services/api'
 import { formatDate, getInitials, cn } from '@/lib/utils'
 
 const PAGE_SIZE = 15
@@ -137,57 +136,7 @@ export default function AdminUsers() {
 
   const fetchStudents = useCallback(async () => {
     setLoading(true)
-    const fetchFromSupabaseDirect = async () => {
-      let query = supabase
-        .from('direct_applications')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-
-      if (debouncedSearch) {
-        query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-
-      const from = (page - 1) * PAGE_SIZE
-      const to = from + PAGE_SIZE - 1
-      const { data: directData, count: directCount, error: directErr } = await query.range(from, to)
-
-      if (directErr) throw directErr
-
-      const transformed: RegisteredStudentItem[] = (directData || []).map((app: any) => ({
-        id: app.id,
-        full_name: app.full_name || 'Student Candidate',
-        email: app.email,
-        phone: app.phone || '',
-        college_name: app.college_name || '',
-        branch: app.branch || '',
-        year_of_study: app.year_of_study || '',
-        created_at: app.created_at,
-        role: 'student',
-        target_internship: app.internship_title || 'Internship Lead',
-        internship_title: app.internship_title,
-        internship_duration: app.duration,
-        resume_url: app.resume_url,
-        linkedin_url: app.linkedin_url,
-        github_url: app.github_url,
-        status: app.status || 'pending',
-        has_certificate: false,
-        has_offer_letter: false,
-        is_registered_account: false,
-      }))
-
-      setStudents(transformed)
-      setTotal(directCount || 0)
-    }
-
     try {
-      if (!isBackendAvailable) {
-        await fetchFromSupabaseDirect()
-        return
-      }
-
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter !== 'all') params.status = statusFilter
@@ -203,11 +152,7 @@ export default function AdminUsers() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      try {
-        await fetchFromSupabaseDirect()
-      } catch (fallbackErr) {
-        toast({ title: 'Error', description: 'Failed to load students.', variant: 'destructive' })
-      }
+      toast({ title: 'Error', description: 'Failed to load students.', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -292,7 +237,7 @@ export default function AdminUsers() {
         </div>
 
         {/* Search Input */}
-        <Card className="border border-slate-200 shadow-xs bg-white">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
           <CardContent className="p-3.5">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -300,85 +245,93 @@ export default function AdminUsers() {
                 placeholder="Search registered students by name, email, phone, college, or domain..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-9 text-sm"
+                className="pl-9 text-sm bg-transparent text-slate-900 dark:text-white"
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* Student Table */}
-        <Card className="border border-slate-200 shadow-xs overflow-hidden bg-white">
+        {/* Students Table */}
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900 overflow-hidden">
           {loading ? (
-            <div className="space-y-3 p-4">
-              {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            <div className="space-y-3 p-6">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
             </div>
           ) : !students.length ? (
-            <EmptyState icon={GraduationCap} title="No registered students found" description="Try switching status tabs or adjusting your search term." />
+            <EmptyState
+              title="No registered students found"
+              description="Accepted applicants and registered students will appear here automatically."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-slate-50/80 text-left">
-                    {['Student Name', 'General Details', 'Enrolled Track', 'Status', 'Registered', 'Action'].map((h) => (
-                      <th key={h} className="px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wider">{h}</th>
-                    ))}
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Candidate</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Contact & College</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Domain</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enrolled On</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {students.map((student) => (
-                    <tr key={student.id} className="hover:bg-blue-50/40 transition-colors group">
+                    <tr key={student.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="px-4 py-3.5">
                         <button
                           type="button"
                           onClick={() => setSelected(student)}
-                          className="flex items-center gap-2.5 text-left group-hover:opacity-95 focus:outline-hidden"
+                          className="flex items-center gap-3 text-left group"
                         >
-                          <Avatar className="h-9 w-9 border border-slate-200 group-hover:border-blue-400 transition-colors">
-                            <AvatarFallback className="bg-blue-600 text-white text-xs font-bold">
+                          <Avatar className="h-9 w-9 border border-slate-200 dark:border-slate-700">
+                            <AvatarFallback className="bg-blue-600 text-white text-xs font-semibold">
                               {getInitials(student.full_name)}
                             </AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-semibold text-slate-900 group-hover:text-blue-600 transition-colors leading-tight flex items-center gap-1.5">
-                              <span>{student.full_name}</span>
+                            <p className="font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-center gap-1.5 transition-colors">
+                              {student.full_name}
                               {student.has_certificate && (
-                                <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 text-[10px] px-1.5 py-0 border-0 flex items-center gap-0.5">
+                                <Badge className="bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100 text-[10px] px-1.5 py-0 border-0 flex items-center gap-0.5">
                                   <Award className="h-3 w-3" /> Certified
                                 </Badge>
                               )}
                             </p>
-                            <span className="text-[11px] text-slate-500">
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
                               {student.source === 'application_registered' ? 'Direct Applicant Lead' : 'Portal Account'}
                             </span>
                           </div>
                         </button>
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-600">
-                        <div className="font-medium text-slate-800">{student.email} {student.phone ? `• ${student.phone}` : ''}</div>
-                        <div className="text-slate-500 mt-0.5 truncate max-w-[240px]">
+                      <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
+                        <div className="font-medium text-slate-800 dark:text-slate-200">{student.email} {student.phone ? `• ${student.phone}` : ''}</div>
+                        <div className="text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[240px]">
                           {student.college_name || 'College not specified'}{student.branch ? ` (${student.branch})` : ''}
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-xs">
                         {student.internship_title ? (
-                          <span className="font-medium text-blue-900 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100 inline-block">
+                          <span className="font-medium text-blue-900 dark:text-blue-200 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-md border border-blue-100 dark:border-blue-800 inline-block">
                             {student.internship_title}
                           </span>
                         ) : (
-                          <span className="text-slate-400 italic">General Track</span>
+                          <span className="text-slate-400 dark:text-slate-500 italic">General Track</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         {getStudentStatusBadge(student.status)}
                       </td>
-                      <td className="px-4 py-3.5 text-xs text-slate-500 whitespace-nowrap">
+                      <td className="px-4 py-3.5 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                         {formatDate(student.created_at)}
                       </td>
                       <td className="px-4 py-3.5">
                         <Button
                           size="sm"
                           variant="outline"
-                          className="text-blue-700 border-blue-200 hover:bg-blue-50 h-8 text-xs font-semibold gap-1"
+                          className="text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-950/40 h-8 text-xs font-semibold gap-1"
                           onClick={() => setSelected(student)}
                         >
                           View Full Details

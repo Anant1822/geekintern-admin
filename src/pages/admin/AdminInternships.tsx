@@ -15,8 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api, { isBackendAvailable } from '@/services/api'
-import { supabase } from '@/lib/supabase'
+import api from '@/services/api'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import type { Internship } from '@/types'
 
@@ -62,35 +61,7 @@ export default function AdminInternships() {
 
   const fetchInternships = useCallback(async () => {
     setLoading(true)
-    const fetchFromSupabaseDirect = async () => {
-      let query = supabase
-        .from('internships')
-        .select('*', { count: 'exact' })
-        .neq('status', 'deleted')
-        .order('created_at', { ascending: false })
-
-      if (debouncedSearch) {
-        query = query.or(`title.ilike.%${debouncedSearch}%,company_name.ilike.%${debouncedSearch}%`)
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-
-      const from = (page - 1) * PAGE_SIZE
-      const to = from + PAGE_SIZE - 1
-      const { data: dbData, count: dbCount, error: dbErr } = await query.range(from, to)
-
-      if (dbErr) throw dbErr
-      setInternships(dbData || [])
-      setTotal(dbCount || 0)
-    }
-
     try {
-      if (!isBackendAvailable) {
-        await fetchFromSupabaseDirect()
-        return
-      }
-
       const params: Record<string, string | number> = {
         admin: 'true',
         page,
@@ -107,11 +78,7 @@ export default function AdminInternships() {
         : (typeof body?.total === 'number' ? body.total : list.length)
       setTotal(totalCount)
     } catch {
-      try {
-        await fetchFromSupabaseDirect()
-      } catch (fallbackErr) {
-        toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
-      }
+      toast({ title: 'Error', description: 'Failed to load internships.', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -203,28 +170,28 @@ export default function AdminInternships() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Manage Internships</h2>
-            <p className="text-sm text-muted-foreground">{total} total internships</p>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Manage Internships</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{total} total internships</p>
           </div>
-          <Button asChild className="bg-brand-navy hover:bg-brand-navy/90 text-white gap-2">
+          <Button asChild className="bg-blue-600 hover:bg-blue-700 text-white gap-2 shadow-xs">
             <Link to="/admin/internships/new"><Plus className="h-4 w-4" />Add New</Link>
           </Button>
         </div>
 
         {/* Filters */}
-        <Card className="border-0 shadow-sm">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
           <CardContent className="p-4 flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
                 placeholder="Search by title or provider…"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-9"
+                className="pl-9 bg-transparent text-slate-900 dark:text-white"
               />
             </div>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as StatusFilter); setPage(1) }}>
-              <SelectTrigger className="w-44">
+              <SelectTrigger className="w-44 bg-transparent border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -239,24 +206,24 @@ export default function AdminInternships() {
 
         {/* Bulk actions */}
         {selected.size > 0 && (
-          <div className="flex items-center gap-3 rounded-lg bg-brand-navy/5 border border-brand-navy/10 px-4 py-2.5">
-            <span className="text-sm font-medium">{selected.size} selected</span>
-            <Button size="sm" variant="outline" onClick={() => handleBulk('publish')} disabled={bulkLoading} className="gap-1.5">
+          <div className="flex items-center gap-3 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 px-4 py-2.5">
+            <span className="text-sm font-medium text-blue-900 dark:text-blue-200">{selected.size} selected</span>
+            <Button size="sm" variant="outline" onClick={() => handleBulk('publish')} disabled={bulkLoading} className="gap-1.5 border-slate-300 dark:border-slate-700">
               {bulkLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
               Publish Selected
             </Button>
-            <Button size="sm" variant="outline" onClick={() => handleBulk('archive')} disabled={bulkLoading} className="gap-1.5 text-orange-600 border-orange-200 hover:bg-orange-50">
+            <Button size="sm" variant="outline" onClick={() => handleBulk('archive')} disabled={bulkLoading} className="gap-1.5 text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-orange-950/40">
               <Archive className="h-3 w-3" />
               Archive Selected
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} className="ml-auto text-xs text-muted-foreground">
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} className="ml-auto text-xs text-slate-500 dark:text-slate-400">
               Clear
             </Button>
           </div>
         )}
 
         {/* Table */}
-        <Card className="border-0 shadow-sm overflow-hidden">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900 overflow-hidden">
           {loading ? (
             <div className="space-y-3 p-4">
               {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
@@ -267,42 +234,42 @@ export default function AdminInternships() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-gray-50">
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
                     <th className="px-4 py-3 text-left">
                       <input
                         type="checkbox"
                         checked={selected.size === internships.length && internships.length > 0}
                         onChange={toggleAll}
-                        className="rounded border-gray-300"
+                        className="rounded border-slate-300 dark:border-slate-700"
                         aria-label="Select all"
                       />
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Title / Provider</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Category</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Fee</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Featured</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Title / Provider</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Category</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fee</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Featured</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {internships.map((intern) => (
-                    <tr key={intern.id} className="border-b last:border-0 hover:bg-gray-50/50 transition-colors group">
+                    <tr key={intern.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors group">
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
                           checked={selected.has(intern.id)}
                           onChange={() => toggleSelect(intern.id)}
-                          className="rounded border-gray-300"
+                          className="rounded border-slate-300 dark:border-slate-700"
                           aria-label={`Select ${intern.title}`}
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900 leading-tight">{intern.title}</p>
-                        <p className="text-xs text-muted-foreground">{intern.provider_name}</p>
+                        <p className="font-semibold text-slate-900 dark:text-white leading-tight">{intern.title}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{intern.provider_name}</p>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{intern.category?.name ?? '—'}</td>
-                      <td className="px-4 py-3 font-medium">{formatCurrency(intern.application_fee)}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{intern.category?.name ?? '—'}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">{formatCurrency(intern.application_fee)}</td>
                       <td className="px-4 py-3">{statusBadge(intern)}</td>
                       <td className="px-4 py-3">
                         <button
@@ -313,19 +280,19 @@ export default function AdminInternships() {
                         >
                           {intern.is_featured
                             ? <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
-                            : <StarOff className="h-4 w-4 text-gray-300" />
+                            : <StarOff className="h-4 w-4 text-slate-300 dark:text-slate-600" />
                           }
                         </button>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1.5">
-                          <Button size="icon" variant="ghost" className="h-8 w-8" asChild title="Edit">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400" asChild title="Edit">
                             <Link to={`/admin/internships/${intern.id}/edit`}>
                               <Pencil className="h-3.5 w-3.5" />
                             </Link>
                           </Button>
                           <Button
-                            size="icon" variant="ghost" className="h-8 w-8"
+                            size="icon" variant="ghost" className="h-8 w-8 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
                             onClick={() => togglePublish(intern)}
                             title={intern.is_verified ? 'Unpublish' : 'Publish'}
                           >

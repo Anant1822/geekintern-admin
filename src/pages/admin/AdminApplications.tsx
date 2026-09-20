@@ -36,8 +36,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api, { isBackendAvailable } from '@/services/api'
-import { supabase } from '@/lib/supabase'
+import api from '@/services/api'
 import { formatDate, cn } from '@/lib/utils'
 
 const PAGE_SIZE = 15
@@ -181,52 +180,7 @@ export default function AdminApplications() {
     } else {
       setIsFetching(true)
     }
-    const fetchFromSupabaseDirect = async () => {
-      let query = supabase
-        .from('direct_applications')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-
-      if (debouncedSearch) {
-        query = query.or(`full_name.ilike.%${debouncedSearch}%,email.ilike.%${debouncedSearch}%,college_name.ilike.%${debouncedSearch}%`)
-      }
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter)
-      }
-      if (dateFrom) {
-        query = query.gte('created_at', dateFrom)
-      }
-      if (dateTo) {
-        query = query.lte('created_at', dateTo)
-      }
-
-      const from = (page - 1) * PAGE_SIZE
-      const to = from + PAGE_SIZE - 1
-      const { data: directData, count: directCount, error: directError } = await query.range(from, to)
-
-      if (directError) throw directError
-
-      setApplications(directData || [])
-      setTotal(directCount || 0)
-
-      // Status counts fallback
-      const { data: allStatuses } = await supabase.from('direct_applications').select('status')
-      if (allStatuses) {
-        const counts: Record<string, number> = { all: allStatuses.length }
-        allStatuses.forEach((r) => {
-          const s = r.status || 'pending'
-          counts[s] = (counts[s] || 0) + 1
-        })
-        setStatusCounts((prev) => ({ ...prev, ...counts }))
-      }
-    }
-
     try {
-      if (!isBackendAvailable) {
-        await fetchFromSupabaseDirect()
-        return
-      }
-
       const params: Record<string, string | number> = { page, limit: PAGE_SIZE }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter !== 'all') params.status = statusFilter
@@ -247,12 +201,8 @@ export default function AdminApplications() {
         : (typeof body?.total === 'number' ? body.total : (Array.isArray(body?.data) ? body.data.length : 0))
       setTotal(totalCount)
     } catch (err) {
-      try {
-        await fetchFromSupabaseDirect()
-      } catch (fallbackErr) {
-        console.error('Failed to load applications via fallback', fallbackErr)
-        toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
-      }
+      console.error('Failed to load applications', err)
+      toast({ title: 'Error', description: 'Failed to load applications.', variant: 'destructive' })
     } finally {
       setLoading(false)
       setIsFetching(false)
@@ -268,20 +218,13 @@ export default function AdminApplications() {
     setUpdatingStatusId(id)
     try {
       await api.patch(`/admin/applications/${id}/status`, { status })
-      toast({ title: 'Status updated', description: `Application status set to ${status}.` })
-      fetchApplications()
-    } catch {
-      try {
-        const { error } = await supabase
-          .from('direct_applications')
-          .update({ status, updated_at: new Date().toISOString() })
-          .eq('id', id)
-        if (error) throw error
-        toast({ title: 'Status updated', description: `Application status set to ${status}.` })
-        fetchApplications()
-      } catch (fallbackErr) {
-        toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' })
-      }
+      toast({ title: 'Status updated successfully!' })
+      setApplications((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status } : a))
+      )
+    } catch (err) {
+      console.error('Status update failed', err)
+      toast({ title: 'Update Failed', description: 'Could not update status.', variant: 'destructive' })
     } finally {
       setUpdatingStatusId(null)
     }
@@ -584,10 +527,10 @@ export default function AdminApplications() {
         </Card>
 
         {/* Table of Leads */}
-        <Card className="border border-slate-200 shadow-xs bg-white overflow-hidden relative">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900 overflow-hidden relative">
           {/* Subtle background fetching progress bar */}
           {isFetching && (
-            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-100 overflow-hidden z-20">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-100 dark:bg-blue-950 overflow-hidden z-20">
               <div className="h-full bg-blue-600 animate-pulse w-full"></div>
             </div>
           )}
@@ -607,18 +550,18 @@ export default function AdminApplications() {
             <div className={cn("overflow-x-auto transition-opacity duration-150", isFetching && "opacity-75")}>
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Applicant</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Contact & WhatsApp</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">College & Branch</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Internship Domain</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Duration</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Applied Date</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase">Status</th>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Applicant</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Contact & WhatsApp</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">College & Branch</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Internship Domain</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Duration</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Applied Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Status</th>
                     <th className="px-3 py-3 text-right"></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {applications.map((app) => {
                     const cleanPhone = (app.phone || '').replace(/\D/g, '')
                     const whatsappLink = `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(
@@ -632,20 +575,20 @@ export default function AdminApplications() {
                         <tr
                           key={app.id}
                           className={cn(
-                            'hover:bg-slate-50/60 transition-colors cursor-pointer',
-                            isExpanded && 'bg-blue-50/30'
+                            'hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors cursor-pointer',
+                            isExpanded && 'bg-blue-50/30 dark:bg-blue-950/30'
                           )}
                           onClick={() => setExpandedId(isExpanded ? null : app.id)}
                         >
                           {/* Name & Email */}
                           <td className="px-4 py-3.5 whitespace-nowrap">
-                            <div className="font-semibold text-slate-900">{app.full_name}</div>
-                            <div className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                            <div className="font-semibold text-slate-900 dark:text-white">{app.full_name}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
                               <Mail className="h-3 w-3" />
                               <a
                                 href={`mailto:${app.email}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="hover:underline text-blue-600"
+                                className="hover:underline text-blue-600 dark:text-blue-400"
                               >
                                 {app.email}
                               </a>
@@ -654,7 +597,7 @@ export default function AdminApplications() {
 
                           {/* Phone & WhatsApp */}
                           <td className="px-4 py-3.5 whitespace-nowrap">
-                            <div className="text-slate-800 font-medium text-xs flex items-center gap-1.5">
+                            <div className="text-slate-800 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5">
                               <Phone className="h-3 w-3 text-slate-400" />
                               <span>{app.phone}</span>
                             </div>
@@ -664,7 +607,7 @@ export default function AdminApplications() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 mt-1"
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800 mt-1"
                               >
                                 WhatsApp Chat ↗
                               </a>
@@ -673,30 +616,31 @@ export default function AdminApplications() {
 
                           {/* College & Branch */}
                           <td className="px-4 py-3.5">
-                            <div className="text-slate-800 text-xs font-medium max-w-[180px] truncate">
+                            <div className="text-slate-800 dark:text-slate-200 text-xs font-medium max-w-[180px] truncate">
                               {app.college_name}
                             </div>
-                            <div className="text-[11px] text-slate-500 max-w-[180px] truncate">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 max-w-[180px] truncate">
                               {app.branch} ({app.year_of_study})
                             </div>
                           </td>
 
                           {/* Domain */}
                           <td className="px-4 py-3.5 whitespace-nowrap">
-                            <span className="font-medium text-blue-900 text-xs bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+                            <span className="font-medium text-blue-900 dark:text-blue-200 text-xs bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-md border border-blue-100 dark:border-blue-800">
                               {app.internship_title}
                             </span>
                           </td>
 
                           {/* Duration */}
-                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600">
-                            {app.duration}
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-600 dark:text-slate-300">
+                            {app.duration || '4 Weeks'}
                           </td>
 
-                          {/* Applied At */}
-                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-500">
-                            {formatDate(app.created_at)}
+                          {/* Applied Date */}
+                          <td className="px-4 py-3.5 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+                            {formatDate(app.created_at, 'dd MMM yyyy')}
                           </td>
+
 
                           {/* Status */}
                           <td className="px-4 py-3.5 whitespace-nowrap">
