@@ -93,6 +93,9 @@ export default function AdminSettings() {
   const [testimonials, setTestimonials] = useState<Testimonial[]>([])
   const [loadingTestimonials, setLoadingTestimonials] = useState(true)
 
+  // FAQ dialog
+  const [faqDialog, setFaqDialog] = useState<{ open: boolean; editing: FAQ | null }>({ open: false, editing: null })
+
   // Admin Accounts management state
   const [adminAccounts, setAdminAccounts] = useState<any[]>([])
   const [loadingAdmins, setLoadingAdmins] = useState(false)
