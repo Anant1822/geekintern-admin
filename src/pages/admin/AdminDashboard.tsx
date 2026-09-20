@@ -13,9 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { useToast } from '@/hooks/useToast'
-import api, { isBackendAvailable } from '@/services/api'
+import api from '@/services/api'
 import { formatDate, cn } from '@/lib/utils'
-import { supabase } from '@/lib/supabase'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface AdminStats {
@@ -58,23 +57,23 @@ interface StatCardProps {
 function StatCard({ label, value, sublabel, icon: Icon, color, bg, href, loading }: StatCardProps) {
   return (
     <Link to={href} className="group block focus:outline-none">
-      <Card className="border border-slate-200/80 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200 bg-white overflow-hidden relative">
+      <Card className="border border-slate-200/80 dark:border-slate-800 shadow-xs hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition-all duration-200 bg-white dark:bg-slate-900 overflow-hidden relative">
         <div className="absolute top-0 left-0 right-0 h-1 bg-transparent group-hover:bg-blue-600 transition-colors" />
         <CardContent className="p-5">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
               {loading ? (
                 <Skeleton className="h-8 w-20 mt-1" />
               ) : (
-                <p className="text-2xl font-extrabold text-slate-900 tracking-tight">{value}</p>
+                <p className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">{value}</p>
               )}
-              <div className="flex items-center gap-1 text-[11px] text-slate-500 pt-0.5 group-hover:text-blue-600 font-medium transition-colors">
+              <div className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 font-medium transition-colors">
                 <span>{sublabel}</span>
                 <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
               </div>
             </div>
-            <div className={cn('rounded-xl p-3 transition-transform group-hover:scale-110 shadow-xs', bg)}>
+            <div className={cn('rounded-xl p-3 transition-transform group-hover:scale-110 shadow-xs dark:bg-opacity-20', bg)}>
               <Icon className={cn('h-5 w-5', color)} />
             </div>
           </div>
@@ -93,93 +92,16 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchFromSupabase = async () => {
-    const [
-      { count: studentProfilesCount },
-      { count: internshipsCount },
-      { count: directAppsCount },
-      { count: registeredAppsCount },
-      { count: paymentsCount },
-      { count: pendingReviewsCount },
-      { count: newInquiriesCount },
-      { count: unreadMessagesCount },
-      { data: recentDirectApps },
-      { data: recentInquiries },
-      { data: recentMessages },
-    ] = await Promise.all([
-      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
-      supabase.from('internships').select('id', { count: 'exact', head: true }).neq('status', 'deleted'),
-      supabase.from('direct_applications').select('id', { count: 'exact', head: true }),
-      supabase.from('applications').select('id', { count: 'exact', head: true }),
-      supabase.from('payments').select('id', { count: 'exact', head: true }).eq('status', 'success'),
-      supabase.from('direct_applications').select('id', { count: 'exact', head: true }).or('status.eq.under_review,status.eq.pending,status.eq.submitted'),
-      supabase.from('college_inquiries').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
-      supabase.from('contact_messages').select('id', { count: 'exact', head: true }).or('status.eq.new,status.is.null'),
-      supabase
-        .from('direct_applications')
-        .select('id, full_name, email, phone, college_name, branch, internship_title, duration, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(6),
-      supabase
-        .from('college_inquiries')
-        .select('id, college_name, contact_person, email, phone, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(4),
-      supabase
-        .from('contact_messages')
-        .select('id, name, email, subject, status, created_at')
-        .order('created_at', { ascending: false })
-        .limit(4),
-    ])
-
-    const totalRegisteredStudents = Math.max(studentProfilesCount ?? 0, directAppsCount ?? 0)
-    const totalApplications = (directAppsCount ?? 0) + (registeredAppsCount ?? 0)
-
-    setData({
-      counts: {
-        students: totalRegisteredStudents,
-        internships: internshipsCount ?? 0,
-        applications: totalApplications,
-        direct_applications: directAppsCount ?? 0,
-        payments: paymentsCount ?? 0,
-        pending_reviews: pendingReviewsCount ?? 0,
-        college_inquiries_new: newInquiriesCount ?? 0,
-        unread_messages: unreadMessagesCount ?? 0,
-      },
-      recent_applications: recentDirectApps ?? [],
-      recent_inquiries: recentInquiries ?? [],
-      recent_messages: recentMessages ?? [],
-    })
-  }
-
   const fetchDashboard = async () => {
     setLoading(true)
     setError(null)
-
-    if (!isBackendAvailable) {
-      try {
-        await fetchFromSupabase()
-      } catch (err) {
-        console.error('Direct Supabase fetch error:', err)
-        setError('Failed to load dashboard data. Please check your network.')
-      } finally {
-        setLoading(false)
-      }
-      return
-    }
-
     try {
       const res = await api.get('/admin/dashboard')
       const body = res.data?.data || res.data || {}
       setData(body)
     } catch {
-      try {
-        await fetchFromSupabase()
-      } catch (directErr) {
-        console.error('Supabase fallback error:', directErr)
-        setError('Failed to load dashboard data. Please check your network.')
-        toast({ title: 'Error', description: 'Could not fetch dashboard data.', variant: 'destructive' })
-      }
+      setError('Failed to load dashboard data. Please check your network.')
+      toast({ title: 'Error', description: 'Could not fetch dashboard data.', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
@@ -317,13 +239,13 @@ export default function AdminDashboard() {
         </div>
 
         {/* Hub / Quick Navigation Gateway */}
-        <Card className="border border-slate-200 shadow-xs bg-white">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               Direct Navigation & Quick Shortcuts
             </CardTitle>
-            <CardDescription className="text-xs text-slate-500">
+            <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
               Jump instantly to any section of the Geek Intern administration portal
             </CardDescription>
           </CardHeader>
@@ -331,78 +253,78 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
               <Link
                 to="/admin/users"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-blue-100 text-blue-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 mb-2 group-hover:scale-105 transition-transform">
                   <Users className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-blue-700">Registered Students</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-blue-700 dark:group-hover:text-blue-400">Registered Students</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Profiles & details</span>
               </Link>
 
               <Link
                 to="/admin/applications"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-purple-300 hover:bg-purple-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-500 hover:bg-purple-50/50 dark:hover:bg-purple-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-purple-100 text-purple-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 mb-2 group-hover:scale-105 transition-transform">
                   <ClipboardList className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-purple-700">Applications</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-purple-700 dark:group-hover:text-purple-400">Applications</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Review pipeline</span>
               </Link>
 
               <Link
                 to="/admin/internships"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-emerald-300 hover:bg-emerald-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-500 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-emerald-100 text-emerald-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 mb-2 group-hover:scale-105 transition-transform">
                   <Briefcase className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-emerald-700">Internships</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-400">Internships</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Manage tracks</span>
               </Link>
 
               <Link
                 to="/admin/certificates"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-amber-300 hover:bg-amber-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-500 hover:bg-amber-50/50 dark:hover:bg-amber-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-amber-100 text-amber-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 mb-2 group-hover:scale-105 transition-transform">
                   <Award className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-amber-700">Certificates</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-amber-700 dark:group-hover:text-amber-400">Certificates</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Cloud library</span>
               </Link>
 
               <Link
                 to="/admin/offer-letters"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-blue-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-sky-100 text-sky-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 mb-2 group-hover:scale-105 transition-transform">
                   <Send className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-sky-700">Offer Letters</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-sky-700 dark:group-hover:text-sky-400">Offer Letters</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Codes & documents</span>
               </Link>
 
               <Link
                 to="/admin/inquiries"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-rose-300 hover:bg-rose-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-rose-300 dark:hover:border-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-rose-100 text-rose-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 mb-2 group-hover:scale-105 transition-transform">
                   <Building2 className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-rose-700">Colleges</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-rose-700 dark:group-hover:text-rose-400">Colleges</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Partnerships</span>
               </Link>
 
               <Link
                 to="/admin/messages"
-                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all group"
+                className="flex flex-col items-center text-center p-3 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all group"
               >
-                <div className="p-2.5 rounded-lg bg-indigo-100 text-indigo-700 mb-2 group-hover:scale-105 transition-transform">
+                <div className="p-2.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 mb-2 group-hover:scale-105 transition-transform">
                   <MessageSquare className="h-4 w-4" />
                 </div>
-                <span className="text-xs font-semibold text-slate-800 group-hover:text-indigo-700">Messages</span>
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-400">Messages</span>
                 <span className="text-[10px] text-slate-400 mt-0.5">Read & unread</span>
               </Link>
             </div>
@@ -410,20 +332,20 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Section 1: Recent Applications & Candidate Stream */}
-        <Card className="border border-slate-200 shadow-xs bg-white">
-          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100">
+        <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
+          <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
             <div>
-              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-purple-600" />
+              <CardTitle className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                 Recent Applications
               </CardTitle>
-              <CardDescription className="text-xs text-slate-500">
+              <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
                 Latest student internship registrations requiring review or offer delivery
               </CardDescription>
             </div>
             <Link
               to="/admin/applications"
-              className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
+              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:underline inline-flex items-center gap-1"
             >
               View All Applications <ArrowRight className="h-3 w-3" />
             </Link>
@@ -434,12 +356,12 @@ export default function AdminDashboard() {
                 {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
             ) : !data?.recent_applications?.length ? (
-              <p className="text-sm text-slate-500 text-center py-10">No applications registered yet.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-10">No applications registered yet.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-slate-50/80 text-left text-xs font-semibold text-slate-500">
+                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/50 text-left text-xs font-semibold text-slate-500 dark:text-slate-400">
                       <th className="px-4 py-3">Applicant Name</th>
                       <th className="px-4 py-3">College & Branch</th>
                       <th className="px-4 py-3">Target Internship</th>
@@ -448,34 +370,34 @@ export default function AdminDashboard() {
                       <th className="px-4 py-3 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {data.recent_applications.map((app: any) => (
-                      <tr key={app.id} className="hover:bg-slate-50/60 transition-colors">
+                      <tr key={app.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
                         <td className="px-4 py-3">
-                          <p className="font-semibold text-slate-900">{app.full_name || 'Applicant'}</p>
-                          <p className="text-xs text-slate-500">{app.email}</p>
+                          <p className="font-semibold text-slate-900 dark:text-white text-xs">{app.full_name}</p>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">{app.email}</p>
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-600">
-                          <p className="font-medium text-slate-800">{app.college_name || '—'}</p>
+                        <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-300">
+                          <p className="font-medium text-slate-800 dark:text-slate-200">{app.college_name || '—'}</p>
                           <p className="text-slate-400">{app.branch || '—'}</p>
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-700">
+                        <td className="px-4 py-3 text-xs text-slate-700 dark:text-slate-300">
                           <span className="font-medium">{app.internship_title || 'General'}</span>
                           {app.duration && <span className="text-slate-400 block text-[11px]">{app.duration}</span>}
                         </td>
                         <td className="px-4 py-3">
                           <span className={cn(
                             'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border capitalize',
-                            app.status === 'accepted' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                            app.status === 'offer_sent' ? 'bg-purple-50 text-purple-800 border-purple-200' :
-                            app.status === 'under_review' ? 'bg-indigo-50 text-indigo-800 border-indigo-200' :
-                            app.status === 'payment_pending' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                            'bg-slate-50 text-slate-700 border-slate-200'
+                            app.status === 'accepted' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
+                            app.status === 'offer_sent' ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
+                            app.status === 'under_review' ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800' :
+                            app.status === 'payment_pending' ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800' :
+                            'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                           )}>
                             {app.status?.replace('_', ' ') || 'Pending'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                        <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {formatDate(app.created_at, 'dd MMM yyyy')}
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -483,7 +405,7 @@ export default function AdminDashboard() {
                             asChild
                             size="sm"
                             variant="ghost"
-                            className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 h-8"
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50 h-8"
                           >
                             <Link to="/admin/applications">
                               Manage <ArrowRight className="h-3 w-3 ml-1" />
@@ -502,20 +424,20 @@ export default function AdminDashboard() {
         {/* Section 2: Recent College Inquiries & Contact Messages Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent College Partnerships */}
-          <Card className="border border-slate-200 shadow-xs bg-white">
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100">
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
+            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-rose-600" />
+                <CardTitle className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-rose-600 dark:text-rose-400" />
                   Recent College Inquiries
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-500">
+                <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
                   Colleges requesting MoU or internship batch placements
                 </CardDescription>
               </div>
               <Link
                 to="/admin/inquiries"
-                className="text-xs font-semibold text-rose-600 hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline inline-flex items-center gap-1"
               >
                 View all <ArrowRight className="h-3 w-3" />
               </Link>
@@ -528,22 +450,22 @@ export default function AdminDashboard() {
               ) : !data?.recent_inquiries?.length ? (
                 <p className="text-xs text-slate-400 text-center py-8">No college inquiries submitted yet.</p>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {data.recent_inquiries.map((inq: any) => (
-                    <div key={inq.id} className="p-4 hover:bg-slate-50/50 transition-colors flex items-start justify-between gap-3">
+                    <div key={inq.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-bold text-slate-900">{inq.college_name}</p>
-                        <p className="text-[11px] text-slate-600 mt-0.5">
-                          {inq.contact_person} • <a href={`mailto:${inq.email}`} className="text-blue-600 hover:underline">{inq.email}</a>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">{inq.college_name}</p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                          {inq.contact_person} • <a href={`mailto:${inq.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">{inq.email}</a>
                         </p>
                         {inq.phone && <p className="text-[10px] text-slate-400 mt-0.5">Tel: {inq.phone}</p>}
                       </div>
                       <div className="text-right shrink-0">
                         <span className={cn(
                           'inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-md border',
-                          inq.status === 'resolved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                          inq.status === 'in_progress' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                          'bg-blue-50 text-blue-800 border-blue-200'
+                          inq.status === 'resolved' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
+                          inq.status === 'in_progress' ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800' :
+                          'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                         )}>
                           {inq.status || 'new'}
                         </span>
@@ -559,20 +481,20 @@ export default function AdminDashboard() {
           </Card>
 
           {/* Recent Contact & Support Messages */}
-          <Card className="border border-slate-200 shadow-xs bg-white">
-            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100">
+          <Card className="border border-slate-200 dark:border-slate-800 shadow-xs bg-white dark:bg-slate-900">
+            <CardHeader className="flex flex-row items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <CardTitle className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-indigo-600" />
+                <CardTitle className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
                   Recent Support Messages
                 </CardTitle>
-                <CardDescription className="text-xs text-slate-500">
+                <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
                   Direct support and feedback submissions from users
                 </CardDescription>
               </div>
               <Link
                 to="/admin/messages"
-                className="text-xs font-semibold text-indigo-600 hover:underline inline-flex items-center gap-1"
+                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1"
               >
                 View all <ArrowRight className="h-3 w-3" />
               </Link>
@@ -585,21 +507,21 @@ export default function AdminDashboard() {
               ) : !data?.recent_messages?.length ? (
                 <p className="text-xs text-slate-400 text-center py-8">No messages received yet.</p>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {data.recent_messages.map((msg: any) => (
-                    <div key={msg.id} className="p-4 hover:bg-slate-50/50 transition-colors flex items-start justify-between gap-3">
+                    <div key={msg.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-xs font-bold text-slate-900">{msg.name}</p>
-                        <p className="text-[11px] text-slate-600 mt-0.5">
-                          {msg.subject ? <span className="font-medium text-slate-800">{msg.subject} • </span> : null}
-                          <a href={`mailto:${msg.email}`} className="text-blue-600 hover:underline">{msg.email}</a>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">{msg.name}</p>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">
+                          {msg.subject ? <span className="font-medium text-slate-800 dark:text-slate-200">{msg.subject} • </span> : null}
+                          <a href={`mailto:${msg.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">{msg.email}</a>
                         </p>
                       </div>
                       <div className="text-right shrink-0">
                         <span className={cn(
                           'inline-flex text-[10px] font-semibold px-2 py-0.5 rounded-md border',
-                          msg.status === 'resolved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                          'bg-blue-50 text-blue-800 border-blue-200'
+                          msg.status === 'resolved' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' :
+                          'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                         )}>
                           {msg.status === 'resolved' ? 'read' : 'unread'}
                         </span>
@@ -616,23 +538,22 @@ export default function AdminDashboard() {
         </div>
 
         {/* Section 3: Bottom Platform Links */}
-        <div className="flex flex-wrap items-center justify-between p-4 bg-white border border-slate-200 rounded-xl text-xs text-slate-500">
+        <div className="flex flex-wrap items-center justify-between p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>Geek Intern Administration System Active & Synced</span>
           </div>
           <div className="flex items-center gap-4 mt-2 sm:mt-0 font-medium">
-            <Link to="/admin/settings" className="hover:text-blue-600">Platform Settings</Link>
+            <Link to="/admin/settings" className="hover:text-blue-600 dark:hover:text-blue-400">Platform Settings</Link>
             <span>•</span>
-            <Link to="/admin/users" className="hover:text-blue-600">Registered Students</Link>
+            <Link to="/admin/users" className="hover:text-blue-600 dark:hover:text-blue-400">Registered Students</Link>
             <span>•</span>
-            <Link to="/admin/applications" className="hover:text-blue-600">Pipeline</Link>
+            <Link to="/admin/applications" className="hover:text-blue-600 dark:hover:text-blue-400">Pipeline</Link>
             <span>•</span>
-            <Link to="/admin/inquiries" className="hover:text-blue-600">Colleges</Link>
+            <Link to="/admin/inquiries" className="hover:text-blue-600 dark:hover:text-blue-400">Colleges</Link>
           </div>
         </div>
       </div>
     </AdminLayout>
   )
 }
-
