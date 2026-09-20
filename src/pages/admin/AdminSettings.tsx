@@ -816,52 +816,76 @@ export default function AdminSettings() {
 
               setSavingAdminEdit(true)
               try {
-                await api.patch(`/admin/accounts/${editingAdmin.id}`, {
-                  full_name: editAdminName.trim(),
-                  email: editAdminEmail.trim(),
-                  password: editAdminPassword.trim() || undefined,
-                })
+                // 1. First try backend API if active
+                try {
+                  await api.patch(`/admin/accounts/${editingAdmin.id}`, {
+                    full_name: editAdminName.trim(),
+                    email: editAdminEmail.trim(),
+                    password: editAdminPassword.trim() || undefined,
+                  }, { timeout: 3000 })
+                } catch (apiErr) {
+                  // If backend is not hosted, continue to direct Supabase update
+                }
+
+                // 2. Direct Supabase Database Update on public.profiles
+                const profileUpdates: { full_name?: string; email?: string; updated_at: string } = {
+                  updated_at: new Date().toISOString()
+                }
+                if (editAdminName.trim()) profileUpdates.full_name = editAdminName.trim()
+                if (editAdminEmail.trim()) profileUpdates.email = editAdminEmail.trim().toLowerCase()
+
+                const { error: profErr } = await supabase
+                  .from('profiles')
+                  .update(profileUpdates)
+                  .eq('id', editingAdmin.id)
+
+                if (profErr) {
+                  console.warn('Profile update warning:', profErr)
+                }
+
+                // 3. If updating current logged-in admin account, sync Supabase Auth & Password
+                const { data: { user: currentUser } } = await supabase.auth.getUser()
+                if (currentUser && currentUser.id === editingAdmin.id) {
+                  const authAttr: { password?: string; data?: { full_name: string } } = {}
+                  if (editAdminPassword.trim()) {
+                    authAttr.password = editAdminPassword.trim()
+                  }
+                  if (editAdminName.trim()) {
+                    authAttr.data = { full_name: editAdminName.trim() }
+                  }
+
+                  if (Object.keys(authAttr).length > 0) {
+                    const { error: authErr } = await supabase.auth.updateUser(authAttr)
+                    if (authErr) {
+                      console.warn('Auth updateUser warning:', authErr)
+                      if (authErr.message?.includes('same password')) {
+                        // Ignore same password error
+                      } else {
+                        throw authErr
+                      }
+                    }
+                  }
+                }
+
+                // 4. Update local state immediately so changes reflect instantly in UI
+                setAdminAccounts((prev) =>
+                  prev.map((a) =>
+                    a.id === editingAdmin.id
+                      ? { ...a, full_name: editAdminName.trim() || a.full_name, email: editAdminEmail.trim() || a.email }
+                      : a
+                  )
+                )
+
                 toast({ title: 'Admin credentials updated successfully!' })
                 setEditingAdmin(null)
                 loadAdminAccounts()
               } catch (err: any) {
-                // Direct Supabase fallback when Node backend is not hosted
-                try {
-                  const updates: { full_name?: string; email?: string } = {}
-                  if (editAdminName.trim()) updates.full_name = editAdminName.trim()
-                  if (editAdminEmail.trim()) updates.email = editAdminEmail.trim()
-
-                  // 1. Update public.profiles
-                  const { error: profErr } = await supabase
-                    .from('profiles')
-                    .update(updates)
-                    .eq('id', editingAdmin.id)
-
-                  if (profErr) throw profErr
-
-                  // 2. If updating current logged-in user, also update Supabase Auth attributes & password
-                  const { data: { user: currentUser } } = await supabase.auth.getUser()
-                  if (currentUser && currentUser.id === editingAdmin.id) {
-                    const authAttr: { password?: string; data?: { full_name: string } } = {}
-                    if (editAdminPassword.trim()) authAttr.password = editAdminPassword.trim()
-                    if (editAdminName.trim()) authAttr.data = { full_name: editAdminName.trim() }
-
-                    if (Object.keys(authAttr).length > 0) {
-                      const { error: authErr } = await supabase.auth.updateUser(authAttr)
-                      if (authErr) throw authErr
-                    }
-                  }
-
-                  toast({ title: 'Admin credentials updated successfully!' })
-                  setEditingAdmin(null)
-                  loadAdminAccounts()
-                } catch (fallbackErr: any) {
-                  toast({
-                    title: 'Failed to update credentials',
-                    description: fallbackErr?.message || err?.response?.data?.message || err?.message || 'Error occurred',
-                    variant: 'destructive',
-                  })
-                }
+                console.error('Failed to update credentials:', err)
+                toast({
+                  title: 'Failed to update credentials',
+                  description: err?.message || err?.response?.data?.message || 'Error occurred while saving',
+                  variant: 'destructive',
+                })
               } finally {
                 setSavingAdminEdit(false)
               }
